@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if editing else 'Add' }} Tool{% endblock %}
+{% block page_title %}<i class="fas fa-{{ 'pen' if editing else 'plus-circle' }}"></i> {{ 'Edit' if editing else 'New' }} Tool{% endblock %}
+
+{% block content %}
+<form method="post" class="card">
+  <div class="form-row">
+    <div class="form-group">
+      <label for="name">Tool Name *</label>
+      <input type="text" name="name" id="name" class="form-control" required
+             value="{{ tool.name if tool else '' }}" placeholder="e.g. Micrometer 0-1″">
+    </div>
+    <div class="form-group">
+      <label for="tool_type">Type</label>
+      <input type="text" name="tool_type" id="tool_type" class="form-control"
+             value="{{ tool.tool_type if tool else '' }}" placeholder="e.g. Micrometer, Caliper, Gauge">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="serial_number">Serial Number *</label>
+      <input type="text" name="serial_number" id="serial_number" class="form-control" required
+             value="{{ tool.serial_number if tool else '' }}">
+    </div>
+    <div class="form-group">
+      <label for="log_number">Log Number *</label>
+      <input type="text" name="log_number" id="log_number" class="form-control" required
+             value="{{ tool.log_number if tool else '' }}">
+    </div>
+    <div class="form-group">
+      <label for="sticker_id">Sticker ID</label>
+      <input type="text" name="sticker_id" id="sticker_id" class="form-control"
+             value="{{ tool.sticker_id if tool else '' }}" placeholder="Barcode / label ID">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="manufacturer">Manufacturer</label>
+      <input type="text" name="manufacturer" id="manufacturer" class="form-control"
+             value="{{ tool.manufacturer if tool else '' }}">
+    </div>
+    <div class="form-group">
+      <label for="model_number">Model Number</label>
+      <input type="text" name="model_number" id="model_number" class="form-control"
+             value="{{ tool.model_number if tool else '' }}">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="location">Location</label>
+      <input type="text" name="location" id="location" class="form-control"
+             value="{{ tool.location if tool else '' }}" placeholder="Building, room, station…">
+    </div>
+    <div class="form-group">
+      <label for="owner">Owner</label>
+      <input type="text" name="owner" id="owner" class="form-control"
+             value="{{ tool.owner if tool else '' }}">
+    </div>
+    <div class="form-group">
+      <label for="router">Router</label>
+      <input type="text" name="router" id="router" class="form-control"
+             value="{{ tool.router if tool else '' }}" placeholder="Specific router assignment">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="schedule">Calibration Schedule *</label>
+      <select name="schedule" id="schedule" class="form-control" onchange="toggleCustom(this)">
+        {% for val, label in schedule_choices %}
+        <option value="{{ val }}" {{ 'selected' if tool and tool.schedule == val }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" id="customIntervalGroup" style="{{ '' if tool and tool.schedule == 'custom' else 'display:none' }}">
+      <label for="custom_interval_days">Custom Interval (days)</label>
+      <input type="number" name="custom_interval_days" id="custom_interval_days" class="form-control"
+             min="1" value="{{ tool.custom_interval_days if tool and tool.custom_interval_days else '' }}">
+    </div>
+    <div class="form-group">
+      <label for="status">Status</label>
+      <select name="status" id="status" class="form-control">
+        {% for val, label in status_choices %}
+        <option value="{{ val }}" {{ 'selected' if tool and tool.status == val }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="last_calibration_date">Last Calibration Date</label>
+      <input type="date" name="last_calibration_date" id="last_calibration_date" class="form-control"
+             value="{{ tool.last_calibration_date if tool and tool.last_calibration_date else '' }}">
+    </div>
+    <div class="form-group">
+      <label for="service_in_date">Service In Date</label>
+      <input type="date" name="service_in_date" id="service_in_date" class="form-control"
+             value="{{ tool.service_in_date if tool and tool.service_in_date else '' }}">
+    </div>
+    <div class="form-group">
+      <label for="service_out_date">Service Out Date</label>
+      <input type="date" name="service_out_date" id="service_out_date" class="form-control"
+             value="{{ tool.service_out_date if tool and tool.service_out_date else '' }}">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="description">Description</label>
+    <textarea name="description" id="description" class="form-control">{{ tool.description if tool else '' }}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label for="comments">Comments / Notes</label>
+    <textarea name="comments" id="comments" class="form-control" placeholder="Any additional notes, status comments…">{{ tool.comments if tool else '' }}</textarea>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> {{ 'Update' if editing else 'Add' }} Tool</button>
+    <a href="{{ url_for('tool_detail', tool_id=tool.id) if editing else url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+
+<script>
+function toggleCustom(sel) {
+  document.getElementById('customIntervalGroup').style.display = sel.value === 'custom' ? '' : 'none';
+}
+</script>
+{% endblock %}

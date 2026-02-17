@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}
+  <i class="fas fa-tachometer-alt"></i> Dashboard
+  <span class="text-muted text-sm" style="margin-left:.75rem;">{{ tools|length }} tool{{ 's' if tools|length != 1 }}</span>
+{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('tool_new') }}" class="btn btn-primary btn-sm">
+    <i class="fas fa-plus"></i> Add Tool
+  </a>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Alert banners ───────────────────────────────────────────── -->
+{% if alert_overdue > 0 %}
+<div class="flash flash-danger" style="margin-bottom:1rem;">
+  <span><i class="fas fa-exclamation-triangle"></i> <strong>{{ alert_overdue }} tool{{ 's' if alert_overdue != 1 }} overdue</strong> for calibration — needs attention ASAP!</span>
+  <a href="{{ url_for('dashboard', status='overdue') }}" class="btn btn-danger btn-sm" style="margin-left:auto;">View Overdue</a>
+</div>
+{% endif %}
+{% if alert_due_soon > 0 %}
+<div class="flash flash-warning" style="margin-bottom:1rem;">
+  <span><i class="fas fa-clock"></i> <strong>{{ alert_due_soon }} tool{{ 's' if alert_due_soon != 1 }}</strong> due for calibration within 30 days.</span>
+  <a href="{{ url_for('dashboard', status='due_soon') }}" class="btn btn-warning btn-sm" style="margin-left:auto;">View Due Soon</a>
+</div>
+{% endif %}
+
+<!-- ── Greeting Banner ─────────────────────────────────────────── -->
+<div class="greeting-banner">
+  <h2>Welcome back, AllClad</h2>
+  <p>{{ tools|length }} tool{{ 's' if tools|length != 1 }} on your radar.
+    {% if alert_overdue > 0 %}<strong>{{ alert_overdue }} overdue.</strong>{% endif %}
+    {% if alert_due_soon > 0 %}<strong>{{ alert_due_soon }} due soon.</strong>{% endif %}
+    {% if alert_overdue == 0 and alert_due_soon == 0 %}Everything is looking clean.{% endif %}
+  </p>
+</div>
+
+<!-- ── Stat Cards ──────────────────────────────────────────────── -->
+<div class="stats-row">
+  <div class="stat-card stat-total">
+    <div class="stat-icon"><i class="fas fa-tools"></i></div>
+    <div class="stat-number">{{ tools|length }}</div>
+    <div class="stat-label">Active Tools</div>
+  </div>
+  <div class="stat-card stat-good">
+    <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+    <div class="stat-number">{{ tools|selectattr('status', 'equalto', 'active')|list|length }}</div>
+    <div class="stat-label">In Calibration</div>
+  </div>
+  <div class="stat-card stat-warn">
+    <div class="stat-icon"><i class="fas fa-clock"></i></div>
+    <div class="stat-number">{{ alert_due_soon }}</div>
+    <div class="stat-label">Due Soon</div>
+  </div>
+  <div class="stat-card stat-bad">
+    <div class="stat-icon"><i class="fas fa-exclamation-circle"></i></div>
+    <div class="stat-number">{{ alert_overdue }}</div>
+    <div class="stat-label">Overdue</div>
+  </div>
+</div>
+
+<!-- ── Filters ─────────────────────────────────────────────────── -->
+<form method="get" class="filters-bar" id="filtersForm">
+  <div class="form-group">
+    <label>Search</label>
+    <input type="text" name="q" class="form-control" placeholder="Name, S/N, log #…" value="{{ q }}">
+  </div>
+  <div class="form-group">
+    <label>Status</label>
+    <select name="status" class="form-control" onchange="this.form.submit()">
+      <option value="">All Statuses</option>
+      {% for val, label in status_choices %}
+        {% if val not in ('backup','retired') %}
+        <option value="{{ val }}" {{ 'selected' if status_filter == val }}>{{ label }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Schedule</label>
+    <select name="schedule" class="form-control" onchange="this.form.submit()">
+      <option value="">All Schedules</option>
+      {% for val, label in schedule_choices %}
+      <option value="{{ val }}" {{ 'selected' if schedule_filter == val }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Location</label>
+    <select name="location" class="form-control" onchange="this.form.submit()">
+      <option value="">All Locations</option>
+      {% for loc in locations %}
+      <option value="{{ loc }}" {{ 'selected' if location_filter == loc }}>{{ loc }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Owner</label>
+    <select name="owner" class="form-control" onchange="this.form.submit()">
+      <option value="">All Owners</option>
+      {% for own in owners %}
+      <option value="{{ own }}" {{ 'selected' if owner_filter == own }}>{{ own }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Router</label>
+    <select name="router" class="form-control" onchange="this.form.submit()">
+      <option value="">All Routers</option>
+      {% for r in routers %}
+      <option value="{{ r }}" {{ 'selected' if router_filter == r }}>{{ r }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group" style="flex:0;">
+    <label>&nbsp;</label>
+    <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Filter</button>
+  </div>
+  {% if q or status_filter or schedule_filter or location_filter or owner_filter or router_filter %}
+  <div class="form-group" style="flex:0;">
+    <label>&nbsp;</label>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Clear</a>
+  </div>
+  {% endif %}
+</form>
+
+<!-- ── Tool Table ──────────────────────────────────────────────── -->
+{% if tools %}
+<div class="card" style="padding:0;">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          {% macro sort_header(col, label) %}
+          <th>
+            <a href="{{ url_for('dashboard', q=q, status=status_filter, schedule=schedule_filter, location=location_filter, owner=owner_filter, router=router_filter, sort=col, order='desc' if sort==col and order=='asc' else 'asc') }}" class="sort-link">
+              {{ label }}
+              {% if sort == col %}
+                <i class="fas fa-sort-{{ 'up' if order=='asc' else 'down' }}"></i>
+              {% else %}
+                <i class="fas fa-sort"></i>
+              {% endif %}
+            </a>
+          </th>
+          {% endmacro %}
+          {{ sort_header('log_number', 'Log #') }}
+          {{ sort_header('name', 'Tool Name') }}
+          {{ sort_header('serial_number', 'Serial #') }}
+          {{ sort_header('location', 'Location') }}
+          {{ sort_header('owner', 'Owner') }}
+          {{ sort_header('schedule', 'Schedule') }}
+          {{ sort_header('last_calibration_date', 'Last Cal.') }}
+          {{ sort_header('next_calibration_date', 'Next Cal.') }}
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tools %}
+        <tr>
+          <td><strong>{{ t.log_number }}</strong></td>
+          <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
+          <td class="text-sm">{{ t.serial_number }}</td>
+          <td class="text-sm">{{ t.location }}</td>
+          <td class="text-sm">{{ t.owner }}</td>
+          <td class="text-sm">{{ t.schedule | replace('_',' ') | title }}</td>
+          <td class="text-sm">{{ t.last_calibration_date or '—' }}</td>
+          <td class="text-sm {% if t.days_until_due is not none and t.days_until_due < 0 %}text-danger{% elif t.days_until_due is not none and t.days_until_due <= 30 %}text-warning{% endif %}">
+            {{ t.next_calibration_date or '—' }}
+            {% if t.days_until_due is not none %}
+              <br><span class="text-sm">({{ t.days_until_due }}d)</span>
+            {% endif %}
+          </td>
+          <td><span class="badge badge-{{ t.status }}">{{ t.status | replace('_',' ') }}</span></td>
+          <td>
+            <div class="table-actions">
+              <a href="{{ url_for('calibrate', tool_id=t.id) }}" class="btn btn-success btn-sm" title="Log calibration"><i class="fas fa-check-circle"></i></a>
+              <a href="{{ url_for('tool_edit', tool_id=t.id) }}" class="btn btn-secondary btn-sm" title="Edit"><i class="fas fa-pen"></i></a>
+              <form method="post" action="{{ url_for('tool_to_backup', tool_id=t.id) }}" style="display:inline;">
+                <input type="hidden" name="reason" value="backup">
+                <button type="submit" class="btn btn-outline btn-sm" title="Move to backup"><i class="fas fa-archive"></i></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <i class="fas fa-tools"></i>
+  <p>No tools found{% if q or status_filter %} matching your filters{% endif %}.</p>
+  <a href="{{ url_for('tool_new') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Your First Tool</a>
+</div>
+{% endif %}
+
+{% endblock %}

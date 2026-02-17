@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Log Calibration – {{ tool.name }}{% endblock %}
+{% block page_title %}<i class="fas fa-check-circle"></i> Log Calibration – {{ tool.name }}{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" class="card">
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="calibration_date">Calibration Date *</label>
+      <input type="date" name="calibration_date" id="calibration_date" class="form-control" required
+             value="{{ today }}">
+    </div>
+    <div class="form-group">
+      <label for="result">Result *</label>
+      <select name="result" id="result" class="form-control" onchange="toggleFailFields(this)">
+        {% for val, label in result_choices %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="performed_by">Performed By</label>
+      <input type="text" name="performed_by" id="performed_by" class="form-control" placeholder="Person or technician name">
+    </div>
+    <div class="form-group">
+      <label for="calibration_company">Calibration Company</label>
+      <input type="text" name="calibration_company" id="calibration_company" class="form-control" placeholder="External lab / company">
+    </div>
+    <div class="form-group">
+      <label for="certificate_number">Certificate Number</label>
+      <input type="text" name="certificate_number" id="certificate_number" class="form-control" placeholder="Cert. or report #">
+    </div>
+  </div>
+
+  <!-- Fail-specific fields -->
+  <div id="failFields" style="display:none;">
+    <div class="flash flash-danger mb-2">
+      <i class="fas fa-exclamation-triangle"></i>
+      <strong>Out of Calibration</strong> — If this tool failed, you may need to invest in replacement materials.
+    </div>
+    <div class="form-group">
+      <label for="replacement_notes">Replacement / Investment Notes</label>
+      <textarea name="replacement_notes" id="replacement_notes" class="form-control"
+                placeholder="Describe what needs to be replaced or invested in…"></textarea>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="notes">Notes</label>
+    <textarea name="notes" id="notes" class="form-control" placeholder="Calibration details, observations…"></textarea>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="test_report_id">Link to Test Report</label>
+      <select name="test_report_id" id="test_report_id" class="form-control">
+        <option value="">— None —</option>
+        {% for tr in test_reports %}
+        <option value="{{ tr.id }}">{{ tr.report_number }} – {{ tr.title }} ({{ tr.report_date }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="certificate_file">Upload Certificate / Report File</label>
+      <input type="file" name="certificate_file" id="certificate_file" class="form-control"
+             accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx">
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Calibration Record</button>
+    <a href="{{ url_for('tool_detail', tool_id=tool.id) }}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+
+<script>
+function toggleFailFields(sel) {
+  document.getElementById('failFields').style.display = sel.value === 'fail' ? '' : 'none';
+}
+</script>
+{% endblock %}

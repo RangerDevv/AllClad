@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Test Reports{% endblock %}
+{% block page_title %}<i class="fas fa-file-alt"></i> Test Reports{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('report_new') }}" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> New Report</a>
+{% endblock %}
+
+{% block content %}
+{% if reports %}
+<div class="card" style="padding:0;">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Report #</th>
+          <th>Title</th>
+          <th>Date</th>
+          <th>Source Company</th>
+          <th>File</th>
+          <th>Linked Calibrations</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+        <tr>
+          <td><strong>{{ r.report_number or '—' }}</strong></td>
+          <td><a href="{{ url_for('report_detail', report_id=r.id) }}">{{ r.title }}</a></td>
+          <td>{{ r.report_date or '—' }}</td>
+          <td>{{ r.source_company or '—' }}</td>
+          <td>
+            {% if r.file_path %}
+            <a href="{{ url_for('uploaded_file', filename=r.file_path) }}" target="_blank" class="btn btn-outline btn-sm"><i class="fas fa-download"></i> {{ r.original_filename }}</a>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td>{{ r.calibrations.count() }}</td>
+          <td>
+            <form method="post" action="{{ url_for('report_delete', report_id=r.id) }}" onsubmit="return confirm('Delete this report?')">
+              <button type="submit" class="btn btn-danger btn-sm btn-icon"><i class="fas fa-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <i class="fas fa-file-alt"></i>
+  <p>No test reports yet.</p>
+  <a href="{{ url_for('report_new') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Upload First Report</a>
+</div>
+{% endif %}
+{% endblock %}

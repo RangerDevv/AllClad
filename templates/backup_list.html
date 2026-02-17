@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Backup List{% endblock %}
+{% block page_title %}<i class="fas fa-archive"></i> Backup / Inactive Tools{% endblock %}
+
+{% block content %}
+<p class="text-muted mb-2">
+  Tools moved off the main tracking list — not in use, repurposed, or intentionally taken out of calibration.
+  Restore them any time to bring them back into active tracking.
+</p>
+
+{% if tools %}
+<div class="card" style="padding:0;">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Log #</th>
+          <th>Tool Name</th>
+          <th>Serial #</th>
+          <th>Location</th>
+          <th>Reason</th>
+          <th>Last Cal.</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tools %}
+        <tr>
+          <td><strong>{{ t.log_number }}</strong></td>
+          <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
+          <td class="text-sm">{{ t.serial_number }}</td>
+          <td class="text-sm">{{ t.location }}</td>
+          <td><span class="badge badge-{{ t.status }}">{{ t.status | replace('_',' ') }}</span></td>
+          <td class="text-sm">{{ t.last_calibration_date or '—' }}</td>
+          <td>
+            <div class="table-actions">
+              <form method="post" action="{{ url_for('tool_restore', tool_id=t.id) }}">
+                <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-undo"></i> Restore</button>
+              </form>
+              <a href="{{ url_for('tool_detail', tool_id=t.id) }}" class="btn btn-secondary btn-sm"><i class="fas fa-eye"></i></a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <i class="fas fa-archive"></i>
+  <p>No tools on the backup list. All tools are being actively tracked.</p>
+</div>
+{% endif %}
+{% endblock %}
