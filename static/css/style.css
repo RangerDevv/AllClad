@@ -510,8 +510,9 @@ tbody tr:hover {
   text-align: center; padding: 4rem 1rem;
   color: var(--c-muted);
 }
-.empty-state i {
-  font-size: 3.5rem; margin-bottom: 1.25rem; opacity: .3;
+.empty-state .empty-icon {
+  display: block;
+  font-size: 3rem; margin-bottom: 1.25rem; opacity: .3;
   animation: emptyFloat 3s ease-in-out infinite;
 }
 @keyframes emptyFloat {
