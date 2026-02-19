@@ -22,21 +22,32 @@
       <span>AllClad</span>
     </div>
     <ul class="sidebar-nav">
+      <!-- ── Main ── -->
+      <li class="nav-section-label">Main</li>
       <li><a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
         <i class="fas fa-tachometer-alt"></i><span>Dashboard</span>
       </a></li>
       <li><a href="{{ url_for('tool_new') }}" class="{% if request.endpoint == 'tool_new' %}active{% endif %}">
         <i class="fas fa-plus-circle"></i><span>Add Tool</span>
       </a></li>
-      <li><a href="{{ url_for('backup_list') }}" class="{% if request.endpoint == 'backup_list' %}active{% endif %}">
-        <i class="fas fa-archive"></i><span>Backup List</span>
+      <li><a href="{{ url_for('lookup') }}" class="{% if request.endpoint == 'lookup' %}active{% endif %}">
+        <i class="fas fa-search"></i><span>Lookup / Scan</span>
+      </a></li>
+
+      <!-- ── Records ── -->
+      <li class="nav-section-label">Records</li>
+      <li><a href="{{ url_for('certificates') }}" class="{% if request.endpoint == 'certificates' %}active{% endif %}">
+        <i class="fas fa-certificate"></i><span>Certificates</span>
       </a></li>
       <li><a href="{{ url_for('test_reports') }}" class="{% if request.endpoint in ('test_reports','report_new','report_detail') %}active{% endif %}">
         <i class="fas fa-file-alt"></i><span>Test Reports</span>
       </a></li>
-      <li><a href="{{ url_for('lookup') }}" class="{% if request.endpoint == 'lookup' %}active{% endif %}">
-        <i class="fas fa-search"></i><span>Lookup / Scan</span>
+      <li><a href="{{ url_for('backup_list') }}" class="{% if request.endpoint == 'backup_list' %}active{% endif %}">
+        <i class="fas fa-archive"></i><span>Backup List</span>
       </a></li>
+
+      <!-- ── Import ── -->
+      <li class="nav-section-label">Import</li>
       <li><a href="{{ url_for('bulk_upload') }}" class="{% if request.endpoint == 'bulk_upload' %}active{% endif %}">
         <i class="fas fa-cloud-upload-alt"></i><span>Bulk Upload</span>
       </a></li>

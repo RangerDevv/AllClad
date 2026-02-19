@@ -261,6 +261,22 @@ SAMPLE_TOOLS = [
         "last_calibration_date": date(2026, 1, 15),
         "comments": "In quality cabinet.",
     },
+    # ── Fowler Outside Micrometer (matches ID 1420.pdf cert) ────────
+    {
+        "name": "Outside Micrometer 0-1\" (ID 1420)",
+        "tool_type": "Outside Micrometer 0-1\"",
+        "manufacturer": "Fowler",
+        "model_number": "",
+        "serial_number": "66209685",
+        "log_number": "QA-0005",
+        "location": "Quality",
+        "owner": "",
+        "router": "",
+        "schedule": "semiannual",
+        "sticker_id": "1420",
+        "last_calibration_date": date(2026, 1, 23),
+        "comments": "Calibrated 1/23/2026 by Cal Tec Labs. Cert #2026-1019846. PASS.",
+    },
     # ── Overdue tool for testing alerts ─────────────────────────────
     {
         "name": "Micrometer - Digital Dial QA 202",
@@ -336,16 +352,28 @@ def seed():
 
             # Add a calibration record for each
             if tool.last_calibration_date:
-                cal = CalibrationRecord(
-                    tool_id=tool.id,
-                    calibration_date=tool.last_calibration_date,
-                    performed_by="Cal Tec",
-                    calibration_company="Mettler Toledo / Cal Tec",
-                    certificate_number=f"CERT-{tool.log_number}",
-                    result="pass",
-                    notes="Calibrated per manufacturer specs.",
-                    test_report_id=report.id if "Scale" in tool.name else None,
-                )
+                # Use real data from the Cal Tec cert for the Fowler micrometer
+                if tool.serial_number == "66209685":
+                    cal = CalibrationRecord(
+                        tool_id=tool.id,
+                        calibration_date=tool.last_calibration_date,
+                        performed_by="Jeremy Lorent",
+                        calibration_company="Cal Tec Labs",
+                        certificate_number="2026-1019846",
+                        result="pass",
+                        notes="WO 2025-WO-1510. As Found: PASS, As Left: PASS. Due 7/23/2026.",
+                    )
+                else:
+                    cal = CalibrationRecord(
+                        tool_id=tool.id,
+                        calibration_date=tool.last_calibration_date,
+                        performed_by="Cal Tec",
+                        calibration_company="Mettler Toledo / Cal Tec",
+                        certificate_number=f"CERT-{tool.log_number}",
+                        result="pass",
+                        notes="Calibrated per manufacturer specs.",
+                        test_report_id=report.id if "Scale" in tool.name else None,
+                    )
                 db.session.add(cal)
 
         db.session.commit()
@@ -354,6 +382,7 @@ def seed():
         print("Tools with serials matching real PDF filenames:")
         print("  1124667-1ME  -> Floor Scale 2256 (matches NA1857-006 PDF)")
         print("  01240720B1   -> Floor Scale 2156 (matches NA1857-005 PDF)")
+        print("  66209685     -> Outside Micrometer 0-1\" ID 1420 (matches ID 1420.pdf)")
         print()
         print("Upload those PDFs via /bulk-upload to test auto-linking!")
 
