@@ -307,6 +307,7 @@ def calibrate(tool_id):
             record.test_report_id = int(tr_id)
 
         db.session.add(record)
+        db.session.flush()  # get record.id for cert linking
 
         # Update tool dates
         tool.last_calibration_date = cal_date
@@ -316,21 +317,21 @@ def calibrate(tool_id):
         else:
             tool.refresh_status()
 
-        db.session.commit()
-
         # Handle certificate file upload
         cert_file = request.files.get("certificate_file")
         if cert_file and cert_file.filename and allowed_file(cert_file.filename):
             stored, original = save_upload(cert_file)
             attachment = FileAttachment(
                 tool_id=tool.id,
+                calibration_record_id=record.id,
                 filename=stored,
                 original_filename=original,
                 file_type="cert",
                 notes=f"Calibration certificate - {cal_date}",
             )
             db.session.add(attachment)
-            db.session.commit()
+
+        db.session.commit()
 
         flash(f"Calibration logged for '{tool.name}' - {result.upper()}.", "success")
         return redirect(url_for("tool_detail", tool_id=tool.id))
@@ -531,6 +532,7 @@ def extract_identifiers(text, filename=""):
         r"(?:Order\s*(?:No\.?|Number)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
         r"(?:Model\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
         r"(?:ID\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:I\.D\.?\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
         r"(?:Sticker\s*(?:ID|#|No\.?)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
     ]:
         for m in re.finditer(pattern, combined, re.IGNORECASE):
@@ -634,8 +636,13 @@ def bulk_upload():
             if tool_matches:
                 # Auto-link to best match (first = highest confidence)
                 for tool, field, value in tool_matches:
+                    # Find most recent calibration record for this tool
+                    latest_cal = CalibrationRecord.query.filter_by(tool_id=tool.id)\
+                        .order_by(CalibrationRecord.calibration_date.desc()).first()
+
                     attachment = FileAttachment(
                         tool_id=tool.id,
+                        calibration_record_id=latest_cal.id if latest_cal else None,
                         filename=stored,
                         original_filename=original,
                         file_type="cert",
@@ -682,8 +689,12 @@ def bulk_upload_link():
         return redirect(url_for("bulk_upload"))
 
     tool = Tool.query.get_or_404(int(tool_id))
+    latest_cal = CalibrationRecord.query.filter_by(tool_id=tool.id)\
+        .order_by(CalibrationRecord.calibration_date.desc()).first()
+
     attachment = FileAttachment(
         tool_id=tool.id,
+        calibration_record_id=latest_cal.id if latest_cal else None,
         filename=stored,
         original_filename=original or stored,
         file_type="cert",
@@ -693,6 +704,20 @@ def bulk_upload_link():
     db.session.commit()
     flash(f"File linked to '{tool.name}'.", "success")
     return redirect(url_for("bulk_upload"))
+
+
+# ── Certificates ────────────────────────────────────────────────────────────
+
+@app.route("/certificates")
+def certificates():
+    """Browse all calibration certificate files."""
+    certs = (
+        FileAttachment.query
+        .filter(FileAttachment.file_type == "cert")
+        .order_by(FileAttachment.uploaded_at.desc())
+        .all()
+    )
+    return render_template("certificates.html", certs=certs)
 
 
 # ── CSV Import ──────────────────────────────────────────────────────────────

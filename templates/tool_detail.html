@@ -93,6 +93,7 @@
           <th>Performed By</th>
           <th>Company</th>
           <th>Certificate #</th>
+          <th>Certificate File</th>
           <th>Test Report</th>
           <th>Notes</th>
         </tr>
@@ -110,6 +111,18 @@
           <td>{{ cal.performed_by or '—' }}</td>
           <td>{{ cal.calibration_company or '—' }}</td>
           <td>{{ cal.certificate_number or '—' }}</td>
+          <td>
+            {% set cert_files = cal.certificates.all() %}
+            {% if cert_files %}
+              {% for cf in cert_files %}
+                <a href="{{ url_for('uploaded_file', filename=cf.filename) }}" target="_blank" class="btn btn-outline btn-sm" style="white-space:nowrap;">
+                  <i class="fas fa-file-pdf"></i> {{ cf.original_filename | truncate(25) }}
+                </a>
+              {% endfor %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
           <td>
             {% if cal.test_report %}
               <a href="{{ url_for('report_detail', report_id=cal.test_report.id) }}">{{ cal.test_report.title }}</a>

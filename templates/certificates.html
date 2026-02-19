@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Certificates{% endblock %}
+{% block page_title %}<i class="fas fa-certificate"></i> Calibration Certificates{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <h2><i class="fas fa-file-pdf"></i> All Certificate Files ({{ certs | length }})</h2>
+    <a href="{{ url_for('bulk_upload') }}" class="btn btn-primary btn-sm"><i class="fas fa-cloud-upload-alt"></i> Bulk Upload</a>
+  </div>
+
+  {% if certs %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Tool</th>
+          <th>Calibration Record</th>
+          <th>Uploaded</th>
+          <th>Notes</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cert in certs %}
+        <tr>
+          <td>
+            <a href="{{ url_for('uploaded_file', filename=cert.filename) }}" target="_blank">
+              <i class="fas fa-file-pdf"></i> {{ cert.original_filename }}
+            </a>
+          </td>
+          <td>
+            {% if cert.tool_id %}
+              {% set t = cert.tool_id %}
+              <a href="{{ url_for('tool_detail', tool_id=cert.tool_id) }}">
+                {{ cert.tool.name if cert.tool else '—' }}
+              </a>
+              {% if cert.tool %}
+                <br><span class="text-sm text-muted">SN: {{ cert.tool.serial_number }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">Unlinked</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if cert.calibration_record %}
+              <span class="badge badge-{{ cert.calibration_record.result }}">{{ cert.calibration_record.result | upper }}</span>
+              {{ cert.calibration_record.calibration_date }}
+              {% if cert.calibration_record.certificate_number %}
+                <br><span class="text-sm text-muted">Cert #: {{ cert.calibration_record.certificate_number }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">Not linked to a record</span>
+            {% endif %}
+          </td>
+          <td class="text-sm">{{ cert.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="text-sm">{{ cert.notes or '—' }}</td>
+          <td>
+            <a href="{{ url_for('uploaded_file', filename=cert.filename) }}" target="_blank"
+               class="btn btn-outline btn-sm btn-icon" title="View / Download">
+              <i class="fas fa-download"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <i class="fas fa-certificate empty-icon"></i>
+    <p>No certificate files uploaded yet.</p>
+    <a href="{{ url_for('bulk_upload') }}" class="btn btn-primary"><i class="fas fa-cloud-upload-alt"></i> Bulk Upload Certificates</a>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

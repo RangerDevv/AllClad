@@ -103,7 +103,8 @@ class Tool(db.Model):
     )
     attachments = db.relationship(
         "FileAttachment", backref="tool", lazy="dynamic",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        foreign_keys="FileAttachment.tool_id",
     )
 
     def recalculate_next_date(self):
@@ -180,6 +181,12 @@ class CalibrationRecord(db.Model):
     # Linked test report
     test_report_id = db.Column(db.Integer, db.ForeignKey("test_reports.id"), nullable=True)
 
+    # Linked certificate files
+    certificates = db.relationship(
+        "FileAttachment", backref="calibration_record", lazy="dynamic",
+        foreign_keys="FileAttachment.calibration_record_id",
+    )
+
     def __repr__(self):
         return f"<CalibrationRecord {self.id} tool={self.tool_id} date={self.calibration_date}>"
 
@@ -213,6 +220,7 @@ class FileAttachment(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     tool_id = db.Column(db.Integer, db.ForeignKey("tools.id"), nullable=True)
+    calibration_record_id = db.Column(db.Integer, db.ForeignKey("calibration_records.id"), nullable=True)
     filename = db.Column(db.String(300), nullable=False)
     original_filename = db.Column(db.String(300), nullable=False)
     file_type = db.Column(db.String(50), default="")            # cert, photo, report, misc
