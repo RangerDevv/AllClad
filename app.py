@@ -401,16 +401,51 @@ def upload_file(tool_id):
         flash("File type not allowed.", "danger")
         return redirect(url_for("tool_detail", tool_id=tool.id))
     stored, original = save_upload(f)
+    user_type = request.form.get("file_type", "auto")
+
+    # Auto-detect PDF type if set to auto
+    detected_type = user_type
+    pdf_text = ""
+    if original.lower().endswith(".pdf") and user_type in ("auto", "misc"):
+        filepath = os.path.join(app.config["UPLOAD_FOLDER"], stored)
+        pdf_text = extract_pdf_text(filepath)
+        if pdf_text:
+            detected_type = classify_pdf(pdf_text, original)
+
+    if detected_type == "report" and original.lower().endswith(".pdf"):
+        # Auto-create a TestReport entry
+        if not pdf_text:
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], stored)
+            pdf_text = extract_pdf_text(filepath)
+        meta = extract_report_metadata(pdf_text, original)
+        report = TestReport(
+            title=meta["title"],
+            report_number=meta["report_number"],
+            report_date=meta["report_date"],
+            source_company=meta["source_company"],
+            file_path=stored,
+            original_filename=original,
+            notes=request.form.get("notes", "") or "Auto-detected as test report",
+        )
+        db.session.add(report)
+        db.session.flush()
+        # Link to most recent calibration record
+        latest_cal = CalibrationRecord.query.filter_by(tool_id=tool.id)\
+            .order_by(CalibrationRecord.calibration_date.desc()).first()
+        if latest_cal and not latest_cal.test_report_id:
+            latest_cal.test_report_id = report.id
+
     attachment = FileAttachment(
         tool_id=tool.id,
         filename=stored,
         original_filename=original,
-        file_type=request.form.get("file_type", "misc"),
+        file_type=detected_type,
         notes=request.form.get("notes", ""),
     )
     db.session.add(attachment)
     db.session.commit()
-    flash(f"File '{original}' uploaded.", "success")
+    type_label = "Test Report" if detected_type == "report" else "Certificate" if detected_type == "cert" else detected_type.title()
+    flash(f"File '{original}' uploaded as {type_label}.", "success")
     return redirect(url_for("tool_detail", tool_id=tool.id))
 
 
@@ -507,6 +542,103 @@ def extract_pdf_text(filepath):
         return text
     except Exception:
         return ""
+
+
+def classify_pdf(text, filename=""):
+    """Determine whether a PDF is a calibration certificate or a test report.
+    Returns 'report' or 'cert'."""
+    text_lower = text.lower()
+    fn_lower = filename.lower()
+
+    report_keywords = [
+        "test report", "comprehensive test report", "measurement results",
+        "eccentricity", "error of indication", "custom tolerance",
+        "repeatability", "report id", "report version",
+        "attachment to test report",
+    ]
+    cert_keywords = [
+        "certificate of calibration", "calibration certificate",
+        "calibration result", "cert #", "cert#", "cal date",
+        "cal. due date", "cal. interval",
+        "service technician", "serviced by", "serviced for",
+        "standards used", "procedures used", "test points",
+    ]
+
+    report_score = sum(1 for kw in report_keywords if kw in text_lower)
+    cert_score = sum(1 for kw in cert_keywords if kw in text_lower)
+
+    # Filename hints
+    if "ctr" in fn_lower or "report" in fn_lower:
+        report_score += 2
+    if "cert" in fn_lower or "cal" in fn_lower:
+        cert_score += 1
+
+    return "report" if report_score > cert_score else "cert"
+
+
+def extract_report_metadata(text, filename=""):
+    """Extract test report metadata (report number, date, company, title) from PDF text."""
+    meta = {"title": "", "report_number": "", "report_date": None, "source_company": ""}
+
+    # Report ID / Number
+    for pat in [
+        r"Report\s*ID\s*[:=]?\s*([A-Za-z0-9\-]+)",
+        r"Report\s*(?:No\.?|Number|#)\s*[:=]?\s*([A-Za-z0-9\-]+)",
+        r"Certificate\s*Number\s*[:=]?\s*([A-Za-z0-9\-]+)",
+    ]:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            meta["report_number"] = m.group(1).strip()
+            break
+
+    # Source company
+    for pat in [
+        r"(Mettler\s*Toledo)",
+        r"Serviced\s*By\s*[:=]?\s*(.+?)\n",
+        r"(Cal\s*Tec\s*Labs)",
+    ]:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            meta["source_company"] = m.group(1).strip()
+            break
+
+    # Date
+    for pat in [
+        r"(?:Issue|Testing|As Found Testing)\s*Date\s*[:=]?\s*([\d]{1,2}[\-/][A-Za-z]{3}[\-/][\d]{4})",
+        r"(?:Issue|Testing|As Found Testing)\s*Date\s*[:=]?\s*([\d]{1,2}[\-/][\d]{1,2}[\-/][\d]{4})",
+    ]:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            raw = m.group(1).strip()
+            for fmt in ("%d-%b-%Y", "%m/%d/%Y", "%d/%m/%Y", "%m-%d-%Y"):
+                try:
+                    meta["report_date"] = datetime.strptime(raw, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            if meta["report_date"]:
+                break
+
+    # Title — build from model/manufacturer/type if available
+    model_m = re.search(r"Model\s*[:=]?\s*([^\n]+)", text)
+    mfg_m = re.search(r"Manufacturer\s*[:=]?\s*([^\n]+)", text)
+    serial_m = re.search(r"Serial\s*No\.?\s*[:=]?\s*([^\n]+)", text)
+    parts = []
+    if mfg_m:
+        parts.append(mfg_m.group(1).strip())
+    if model_m:
+        parts.append(model_m.group(1).strip())
+    if serial_m:
+        parts.append(f"SN {serial_m.group(1).strip()}")
+    if parts:
+        meta["title"] = "Comprehensive Test Report - " + " ".join(parts)
+    elif meta["report_number"]:
+        meta["title"] = f"Test Report {meta['report_number']}"
+    else:
+        fn_base = os.path.splitext(filename)[0] if filename else "Unknown"
+        meta["title"] = f"Test Report - {fn_base}"
+
+    return meta
 
 
 def extract_identifiers(text, filename=""):
@@ -625,10 +757,14 @@ def bulk_upload():
             # Try matching
             tool_matches = match_pdf_to_tools(identifiers)
 
+            # Classify the document
+            doc_type = classify_pdf(pdf_text, original) if pdf_text else "cert"
+
             file_result = {
                 "filename": original,
                 "stored": stored,
                 "status": "matched" if tool_matches else "unmatched",
+                "doc_type": doc_type,
                 "matches": [],
                 "identifiers": list(identifiers)[:20],  # cap for display
             }
@@ -640,14 +776,40 @@ def bulk_upload():
                     latest_cal = CalibrationRecord.query.filter_by(tool_id=tool.id)\
                         .order_by(CalibrationRecord.calibration_date.desc()).first()
 
-                    attachment = FileAttachment(
-                        tool_id=tool.id,
-                        calibration_record_id=latest_cal.id if latest_cal else None,
-                        filename=stored,
-                        original_filename=original,
-                        file_type="cert",
-                        notes=f"Auto-linked via {field}: {value}",
-                    )
+                    if doc_type == "report":
+                        # Create a TestReport entry and link to the calibration record
+                        meta = extract_report_metadata(pdf_text, original)
+                        report = TestReport(
+                            title=meta["title"],
+                            report_number=meta["report_number"],
+                            report_date=meta["report_date"],
+                            source_company=meta["source_company"],
+                            file_path=stored,
+                            original_filename=original,
+                            notes=f"Auto-imported via {field}: {value}",
+                        )
+                        db.session.add(report)
+                        db.session.flush()
+                        # Link calibration record to this report
+                        if latest_cal and not latest_cal.test_report_id:
+                            latest_cal.test_report_id = report.id
+                        attachment = FileAttachment(
+                            tool_id=tool.id,
+                            calibration_record_id=latest_cal.id if latest_cal else None,
+                            filename=stored,
+                            original_filename=original,
+                            file_type="report",
+                            notes=f"Test report - auto-linked via {field}: {value}",
+                        )
+                    else:
+                        attachment = FileAttachment(
+                            tool_id=tool.id,
+                            calibration_record_id=latest_cal.id if latest_cal else None,
+                            filename=stored,
+                            original_filename=original,
+                            file_type="cert",
+                            notes=f"Certificate - auto-linked via {field}: {value}",
+                        )
                     db.session.add(attachment)
                     file_result["matches"].append({
                         "tool_id": tool.id,

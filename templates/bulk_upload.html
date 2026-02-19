@@ -2,7 +2,7 @@
 
 {% block title %}Bulk Upload{% endblock %}
 {% block page_title %}
-  <i class="fas fa-cloud-upload-alt"></i> Bulk Upload Certificates
+  <i class="fas fa-cloud-upload-alt"></i> Bulk Upload
 {% endblock %}
 
 {% block content %}
@@ -14,8 +14,9 @@
     <h2>Upload Calibration PDFs</h2>
   </div>
   <p style="color:var(--c-text-lt);margin-bottom:1.25rem;font-size:.92rem;">
-    Drop multiple PDF calibration certificates here. The system will extract serial numbers, asset IDs,
-    and certificate numbers from each PDF and automatically link them to matching tools.
+    Drop multiple PDF files here. The system will automatically detect whether each file is a
+    <strong>calibration certificate</strong> or a <strong>test report</strong>, extract identifiers,
+    match them to tools, and link them correctly.
   </p>
 
   <form method="post" enctype="multipart/form-data" id="bulkUploadForm">
@@ -103,6 +104,7 @@
       <thead>
         <tr>
           <th>PDF File</th>
+          <th>Type</th>
           <th>Linked Tool</th>
           <th>Matched On</th>
           <th>Value</th>
@@ -114,6 +116,13 @@
           {% for m in r.matches %}
           <tr>
             <td><i class="fas fa-file-pdf" style="color:#ef4444;margin-right:.35rem;"></i> {{ r.filename }}</td>
+            <td>
+              {% if r.doc_type == 'report' %}
+                <span class="badge badge-active" style="background:var(--c-accent);">Test Report</span>
+              {% else %}
+                <span class="badge badge-active">Certificate</span>
+              {% endif %}
+            </td>
             <td><strong>{{ m.tool_name }}</strong></td>
             <td><span class="badge badge-active">{{ m.match_field|replace('_',' ') }}</span></td>
             <td class="text-sm">{{ m.match_value }}</td>
