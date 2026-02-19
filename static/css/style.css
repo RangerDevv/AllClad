@@ -441,6 +441,7 @@ textarea.form-control { min-height: 80px; resize: vertical; }
 table {
   width: 100%; border-collapse: collapse;
   font-size: .92rem;
+  table-layout: fixed;
 }
 thead th {
   background: var(--c-surface-2);
@@ -462,7 +463,13 @@ tbody td {
   border-bottom: 1px solid var(--c-border);
   vertical-align: middle;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* Allow wrapping in notes & description cells */
+tbody td.text-sm,
+tbody td.wrap { white-space: normal; word-break: break-word; }
 tbody tr {
   transition: all var(--transition);
 }
