@@ -1,8 +1,13 @@
 """AllClad – Calibration Tracking System (Flask Application)."""
 
+import csv
+import io
 import os
+import re
 import uuid
 from datetime import date, datetime
+
+import fitz  # PyMuPDF – PDF text extraction
 
 from flask import (
     Flask, render_template, request, redirect, url_for, flash,
@@ -486,6 +491,354 @@ def api_change_status(tool_id):
         db.session.commit()
         return jsonify(tool.to_dict())
     return jsonify({"error": "Invalid status"}), 400
+
+
+# ── PDF Text Extraction & Matching Helpers ──────────────────────────────────
+
+def extract_pdf_text(filepath):
+    """Extract all text from a PDF using PyMuPDF."""
+    try:
+        doc = fitz.open(filepath)
+        text = ""
+        for page in doc:
+            text += page.get_text() + "\n"
+        doc.close()
+        return text
+    except Exception:
+        return ""
+
+
+def extract_identifiers(text, filename=""):
+    """Pull serial numbers, certificate numbers, and other IDs from text + filename."""
+    combined = text + "\n" + filename
+    identifiers = set()
+
+    # Split filename by underscores and hyphens for token matching
+    fn_base = os.path.splitext(filename)[0] if filename else ""
+    for token in re.split(r"[_\s]+", fn_base):
+        token = token.strip()
+        if len(token) >= 3 and not token.lower().startswith("all clad"):
+            identifiers.add(token)
+
+    # Look for common certificate / serial patterns in PDF text
+    # Serial No: XXXX  or  S/N: XXXX  or  Serial Number: XXXX
+    for pattern in [
+        r"(?:Serial\s*(?:No\.?|Number|#)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:S/N\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:Asset\s*(?:No\.?|Number|#|ID)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:Certificate\s*(?:No\.?|Number|#)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:Cert\.?\s*(?:No\.?|#)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:Order\s*(?:No\.?|Number)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:Model\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:ID\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+        r"(?:Sticker\s*(?:ID|#|No\.?)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
+    ]:
+        for m in re.finditer(pattern, combined, re.IGNORECASE):
+            val = m.group(1).strip().rstrip(".,;:")
+            if len(val) >= 3:
+                identifiers.add(val)
+
+    return identifiers
+
+
+def match_pdf_to_tools(identifiers):
+    """Try to match extracted identifiers against tools in the database.
+    Returns list of (tool, match_field, match_value) sorted by confidence."""
+    matches = []
+    seen_ids = set()
+    tools = Tool.query.all()
+
+    for tool in tools:
+        for ident in identifiers:
+            ident_lower = ident.lower().strip()
+            if len(ident_lower) < 3:
+                continue
+
+            # Check serial number (most reliable)
+            if tool.serial_number and ident_lower in tool.serial_number.lower():
+                if tool.id not in seen_ids:
+                    matches.append((tool, "serial_number", ident))
+                    seen_ids.add(tool.id)
+                    break
+
+            # Check log number
+            if tool.log_number and ident_lower == tool.log_number.lower():
+                if tool.id not in seen_ids:
+                    matches.append((tool, "log_number", ident))
+                    seen_ids.add(tool.id)
+                    break
+
+            # Check sticker ID
+            if tool.sticker_id and ident_lower in tool.sticker_id.lower():
+                if tool.id not in seen_ids:
+                    matches.append((tool, "sticker_id", ident))
+                    seen_ids.add(tool.id)
+                    break
+
+            # Check model number
+            if tool.model_number and len(ident_lower) >= 4 and ident_lower in tool.model_number.lower():
+                if tool.id not in seen_ids:
+                    matches.append((tool, "model_number", ident))
+                    seen_ids.add(tool.id)
+                    break
+
+    return matches
+
+
+# ── Bulk PDF Upload ─────────────────────────────────────────────────────────
+
+@app.route("/bulk-upload", methods=["GET", "POST"])
+def bulk_upload():
+    if request.method == "POST":
+        files = request.files.getlist("files")
+        if not files or all(f.filename == "" for f in files):
+            flash("No files selected.", "danger")
+            return redirect(url_for("bulk_upload"))
+
+        results = []
+        for f in files:
+            if not f.filename:
+                continue
+            if not allowed_file(f.filename):
+                results.append({
+                    "filename": f.filename,
+                    "status": "skipped",
+                    "reason": "File type not allowed",
+                    "matches": [],
+                })
+                continue
+
+            # Save the file
+            stored, original = save_upload(f)
+
+            # Extract text if PDF
+            pdf_text = ""
+            if original.lower().endswith(".pdf"):
+                filepath = os.path.join(app.config["UPLOAD_FOLDER"], stored)
+                pdf_text = extract_pdf_text(filepath)
+
+            # Extract identifiers from text + filename
+            identifiers = extract_identifiers(pdf_text, original)
+
+            # Try matching
+            tool_matches = match_pdf_to_tools(identifiers)
+
+            file_result = {
+                "filename": original,
+                "stored": stored,
+                "status": "matched" if tool_matches else "unmatched",
+                "matches": [],
+                "identifiers": list(identifiers)[:20],  # cap for display
+            }
+
+            if tool_matches:
+                # Auto-link to best match (first = highest confidence)
+                for tool, field, value in tool_matches:
+                    attachment = FileAttachment(
+                        tool_id=tool.id,
+                        filename=stored,
+                        original_filename=original,
+                        file_type="cert",
+                        notes=f"Auto-linked via {field}: {value}",
+                    )
+                    db.session.add(attachment)
+                    file_result["matches"].append({
+                        "tool_id": tool.id,
+                        "tool_name": tool.name,
+                        "serial_number": tool.serial_number,
+                        "log_number": tool.log_number,
+                        "match_field": field,
+                        "match_value": value,
+                    })
+
+            results.append(file_result)
+
+        db.session.commit()
+
+        matched = sum(1 for r in results if r["status"] == "matched")
+        unmatched = sum(1 for r in results if r["status"] == "unmatched")
+        skipped = sum(1 for r in results if r["status"] == "skipped")
+
+        flash(
+            f"Processed {len(results)} files: {matched} matched, {unmatched} unmatched, {skipped} skipped.",
+            "success" if matched > 0 else "warning",
+        )
+
+        return render_template("bulk_upload.html", results=results, processed=True,
+                               all_tools=Tool.query.order_by(Tool.log_number).all())
+
+    return render_template("bulk_upload.html", results=[], processed=False)
+
+
+@app.route("/bulk-upload/link", methods=["POST"])
+def bulk_upload_link():
+    """Manually link an unmatched file to a tool."""
+    stored = request.form.get("stored_filename")
+    original = request.form.get("original_filename")
+    tool_id = request.form.get("tool_id")
+
+    if not stored or not tool_id:
+        flash("Missing file or tool selection.", "danger")
+        return redirect(url_for("bulk_upload"))
+
+    tool = Tool.query.get_or_404(int(tool_id))
+    attachment = FileAttachment(
+        tool_id=tool.id,
+        filename=stored,
+        original_filename=original or stored,
+        file_type="cert",
+        notes="Manually linked via bulk upload",
+    )
+    db.session.add(attachment)
+    db.session.commit()
+    flash(f"File linked to '{tool.name}'.", "success")
+    return redirect(url_for("bulk_upload"))
+
+
+# ── CSV Import ──────────────────────────────────────────────────────────────
+
+SCHEDULE_MAP = {
+    "monthly": "monthly",
+    "quarterly": "quarterly",
+    "6 months": "semiannual",
+    "6 month": "semiannual",
+    "semiannual": "semiannual",
+    "semi-annual": "semiannual",
+    "yearly": "annual",
+    "annual": "annual",
+    "12 months": "annual",
+    "biennial": "biennial",
+    "24 months": "biennial",
+    "2 years": "biennial",
+}
+
+
+def parse_schedule(raw):
+    """Convert a raw schedule string from the CSV to a model schedule value."""
+    if not raw:
+        return "annual"
+    cleaned = raw.strip().lower()
+    for key, val in SCHEDULE_MAP.items():
+        if key in cleaned:
+            return val
+    # Check for year patterns like "5/years/2026"
+    if "year" in cleaned:
+        return "annual"
+    return "annual"
+
+
+@app.route("/csv-import", methods=["GET", "POST"])
+def csv_import():
+    if request.method == "POST":
+        f = request.files.get("csv_file")
+        if not f or not f.filename:
+            flash("No file selected.", "danger")
+            return redirect(url_for("csv_import"))
+
+        if not f.filename.lower().endswith(".csv"):
+            flash("Please upload a CSV file.", "danger")
+            return redirect(url_for("csv_import"))
+
+        try:
+            stream = io.StringIO(f.stream.read().decode("utf-8", errors="replace"))
+            reader = csv.DictReader(stream)
+
+            imported = 0
+            skipped = 0
+            updated = 0
+            errors = []
+
+            for i, row in enumerate(reader, start=2):
+                # Skip empty rows or header-like rows
+                dept = (row.get("DEPT") or "").strip()
+                if not dept or dept.lower() == "dept":
+                    continue
+
+                manufacturer = (row.get("Manufacturer") or "").strip()
+                type_model = (row.get("Type/Model") or "").strip()
+                asset_serial = (row.get("Asset / Serial No.") or row.get("Asset / Serial No") or "").strip()
+                interval = (row.get("Calibration Interval") or "").strip()
+                cal_company = (row.get("Calibration Company") or "").strip()
+                in_service = (row.get("In-Service Date") or "").strip()
+                out_service = (row.get("Out-of-Service date") or row.get("Out-of-Service Date") or "").strip()
+                status_raw = (row.get("Status (Active/Inactive)") or "").strip()
+                person = (row.get("Person Responsible (if applicable)") or "").strip()
+                notes = (row.get("Notes") or "").strip()
+                cal_date_raw = (row.get("Calibration Date") or "").strip()
+                cert = (row.get("Calibration/Certificate") or "").strip()
+
+                if not asset_serial and not type_model:
+                    skipped += 1
+                    continue
+
+                # Generate a serial number from asset/serial field or manufacture a unique one
+                serial = asset_serial if asset_serial else f"IMPORT-{uuid.uuid4().hex[:8]}"
+
+                # Check if tool with this serial already exists
+                existing = Tool.query.filter(Tool.serial_number == serial).first()
+                if existing:
+                    # Update notes if new info
+                    if notes and notes not in (existing.comments or ""):
+                        existing.comments = (existing.comments or "") + ("\n" if existing.comments else "") + notes
+                    updated += 1
+                    continue
+
+                # Build tool name from type/model or manufacturer
+                name = type_model if type_model else f"{manufacturer} instrument"
+
+                schedule = parse_schedule(interval)
+
+                # Determine status
+                tool_status = "active"
+                if status_raw.lower() in ("inactive", "retired"):
+                    tool_status = "retired"
+                if "missing" in notes.lower():
+                    tool_status = "not_in_use"
+                if "broken" in notes.lower() or "damaged" in notes.lower():
+                    tool_status = "out_of_cal"
+
+                on_backup = tool_status in ("retired", "not_in_use")
+
+                # Generate log number
+                log_number = f"CSV-{dept[:3].upper()}-{i:04d}"
+
+                tool = Tool(
+                    name=name,
+                    tool_type=type_model,
+                    manufacturer=manufacturer,
+                    serial_number=serial,
+                    log_number=log_number,
+                    location=dept,
+                    owner=person,
+                    schedule=schedule,
+                    status=tool_status,
+                    on_backup_list=on_backup,
+                    comments=notes,
+                    sticker_id=cert if cert and cert.lower() not in ("x", "missing", "not checked") else "",
+                )
+
+                # Try to parse calibration date
+                if cal_date_raw and cal_date_raw.lower() != "x":
+                    try:
+                        tool.last_calibration_date = date.fromisoformat(cal_date_raw)
+                        tool.recalculate_next_date()
+                    except ValueError:
+                        pass  # non-standard date, skip
+
+                db.session.add(tool)
+                imported += 1
+
+            db.session.commit()
+            flash(
+                f"CSV imported: {imported} new tools, {updated} existing updated, {skipped} rows skipped.",
+                "success",
+            )
+        except Exception as e:
+            flash(f"Error reading CSV: {str(e)}", "danger")
+
+        return redirect(url_for("csv_import"))
+
+    return render_template("csv_import.html")
 
 
 # ── Init DB ─────────────────────────────────────────────────────────────────

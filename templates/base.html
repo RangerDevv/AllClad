@@ -37,6 +37,12 @@
       <li><a href="{{ url_for('lookup') }}" class="{% if request.endpoint == 'lookup' %}active{% endif %}">
         <i class="fas fa-search"></i><span>Lookup / Scan</span>
       </a></li>
+      <li><a href="{{ url_for('bulk_upload') }}" class="{% if request.endpoint == 'bulk_upload' %}active{% endif %}">
+        <i class="fas fa-cloud-upload-alt"></i><span>Bulk Upload</span>
+      </a></li>
+      <li><a href="{{ url_for('csv_import') }}" class="{% if request.endpoint == 'csv_import' %}active{% endif %}">
+        <i class="fas fa-file-csv"></i><span>CSV Import</span>
+      </a></li>
     </ul>
 
     <!-- Alert badges -->

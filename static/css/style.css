@@ -605,6 +605,40 @@ tbody tr:hover {
 }
 
 /* ── Utility ───────────────────────────────────────────────────── */
+
+/* ── Drop Zone (Bulk Upload) ───────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed rgba(255,255,255,.12);
+  border-radius: var(--radius);
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  background: var(--c-bg-subtle);
+  margin-bottom: 1.25rem;
+}
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: var(--c-primary);
+  background: rgba(124,58,237,.06);
+  box-shadow: 0 0 30px rgba(124,58,237,.08);
+}
+.file-list {
+  margin-bottom: 1.25rem;
+}
+.file-list ul {
+  list-style: none; padding: 0;
+}
+.file-list ul li {
+  padding: .5rem .75rem;
+  background: var(--c-bg-subtle);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: .35rem;
+  font-size: .9rem;
+  font-weight: 500;
+}
+
 .text-danger { color: #f87171; }
 .text-warning { color: #fbbf24; }
 .text-success { color: #4ade80; }
