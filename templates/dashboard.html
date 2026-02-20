@@ -14,17 +14,99 @@
 
 {% block content %}
 
-<!-- ── Alert banners ───────────────────────────────────────────── -->
-{% if alert_overdue > 0 %}
-<div class="flash flash-danger" style="margin-bottom:1rem;">
-  <span><i class="fas fa-exclamation-triangle"></i> <strong>{{ alert_overdue }} tool{{ 's' if alert_overdue != 1 }} overdue</strong> for calibration — needs attention ASAP!</span>
-  <a href="{{ url_for('dashboard', status='overdue') }}" class="btn btn-danger btn-sm" style="margin-left:auto;">View Overdue</a>
+<!-- ── Overdue Tools Panel ──────────────────────────────────────── -->
+{% if overdue_tools %}
+<div class="card urgent-panel urgent-panel-danger" style="margin-bottom:1.25rem;border-left:4px solid var(--c-danger);">
+  <div class="card-header" style="display:flex;align-items:center;gap:.5rem;padding-bottom:.5rem;cursor:pointer;" onclick="this.parentElement.classList.toggle('collapsed')">
+    <i class="fas fa-exclamation-triangle" style="color:var(--c-danger);font-size:1.1rem;"></i>
+    <h2 style="color:var(--c-danger);margin:0;flex:1;">{{ overdue_tools|length }} Overdue Tool{{ 's' if overdue_tools|length != 1 }} — Needs Attention!</h2>
+    <i class="fas fa-chevron-down panel-toggle" style="color:var(--c-text-lt);transition:transform .2s;"></i>
+  </div>
+  <div class="urgent-panel-body">
+    <div class="table-wrap" style="margin-top:.5rem;">
+      <table>
+        <thead>
+          <tr>
+            <th>Log #</th>
+            <th>Tool Name</th>
+            <th>Serial #</th>
+            <th>Location</th>
+            <th>Owner</th>
+            <th>Due Date</th>
+            <th>Days Overdue</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in overdue_tools %}
+          <tr>
+            <td><strong>{{ t.log_number }}</strong></td>
+            <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
+            <td class="text-sm">{{ t.serial_number }}</td>
+            <td class="text-sm">{{ t.location }}</td>
+            <td class="text-sm">{{ t.owner or '—' }}</td>
+            <td class="text-sm text-danger"><strong>{{ t.next_calibration_date or '—' }}</strong></td>
+            <td class="text-sm text-danger"><strong>{{ (t.days_until_due|abs) if t.days_until_due is not none else '—' }}d</strong></td>
+            <td>
+              <div class="table-actions">
+                <a href="{{ url_for('calibrate', tool_id=t.id) }}" class="btn btn-success btn-sm" title="Log calibration"><i class="fas fa-check-circle"></i></a>
+                <a href="{{ url_for('tool_edit', tool_id=t.id) }}" class="btn btn-secondary btn-sm" title="Edit"><i class="fas fa-pen"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 {% endif %}
-{% if alert_due_soon > 0 %}
-<div class="flash flash-warning" style="margin-bottom:1rem;">
-  <span><i class="fas fa-clock"></i> <strong>{{ alert_due_soon }} tool{{ 's' if alert_due_soon != 1 }}</strong> due for calibration within 30 days.</span>
-  <a href="{{ url_for('dashboard', status='due_soon') }}" class="btn btn-warning btn-sm" style="margin-left:auto;">View Due Soon</a>
+
+<!-- ── Due Soon Tools Panel ─────────────────────────────────────── -->
+{% if due_soon_tools %}
+<div class="card urgent-panel urgent-panel-warning" style="margin-bottom:1.25rem;border-left:4px solid var(--c-warning);">
+  <div class="card-header" style="display:flex;align-items:center;gap:.5rem;padding-bottom:.5rem;cursor:pointer;" onclick="this.parentElement.classList.toggle('collapsed')">
+    <i class="fas fa-clock" style="color:var(--c-warning);font-size:1.1rem;"></i>
+    <h2 style="color:var(--c-warning);margin:0;flex:1;">{{ due_soon_tools|length }} Tool{{ 's' if due_soon_tools|length != 1 }} Due Within 30 Days</h2>
+    <i class="fas fa-chevron-down panel-toggle" style="color:var(--c-text-lt);transition:transform .2s;"></i>
+  </div>
+  <div class="urgent-panel-body">
+    <div class="table-wrap" style="margin-top:.5rem;">
+      <table>
+        <thead>
+          <tr>
+            <th>Log #</th>
+            <th>Tool Name</th>
+            <th>Serial #</th>
+            <th>Location</th>
+            <th>Owner</th>
+            <th>Due Date</th>
+            <th>Days Left</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in due_soon_tools %}
+          <tr>
+            <td><strong>{{ t.log_number }}</strong></td>
+            <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
+            <td class="text-sm">{{ t.serial_number }}</td>
+            <td class="text-sm">{{ t.location }}</td>
+            <td class="text-sm">{{ t.owner or '—' }}</td>
+            <td class="text-sm text-warning"><strong>{{ t.next_calibration_date or '—' }}</strong></td>
+            <td class="text-sm text-warning"><strong>{{ t.days_until_due if t.days_until_due is not none else '—' }}d</strong></td>
+            <td>
+              <div class="table-actions">
+                <a href="{{ url_for('calibrate', tool_id=t.id) }}" class="btn btn-success btn-sm" title="Log calibration"><i class="fas fa-check-circle"></i></a>
+                <a href="{{ url_for('tool_edit', tool_id=t.id) }}" class="btn btn-secondary btn-sm" title="Edit"><i class="fas fa-pen"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 {% endif %}
 

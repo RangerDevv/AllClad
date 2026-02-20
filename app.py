@@ -130,6 +130,14 @@ def dashboard():
 
     tools = query.all()
 
+    # Urgent tools (always fetched regardless of current filters)
+    overdue_tools = Tool.query.filter(
+        Tool.status == "overdue", Tool.on_backup_list == False
+    ).order_by(Tool.next_calibration_date.asc()).all()
+    due_soon_tools = Tool.query.filter(
+        Tool.status == "due_soon", Tool.on_backup_list == False
+    ).order_by(Tool.next_calibration_date.asc()).all()
+
     # Distinct values for filter dropdowns
     locations = [r[0] for r in db.session.query(Tool.location).distinct() if r[0]]
     owners = [r[0] for r in db.session.query(Tool.owner).distinct() if r[0]]
@@ -138,6 +146,7 @@ def dashboard():
     return render_template(
         "dashboard.html", tools=tools,
         locations=locations, owners=owners, routers=routers,
+        overdue_tools=overdue_tools, due_soon_tools=due_soon_tools,
         q=q, status_filter=status_filter, schedule_filter=schedule_filter,
         location_filter=location_filter, owner_filter=owner_filter,
         router_filter=router_filter, sort=sort, order=order,

@@ -318,6 +318,39 @@ a:hover { color: #67e8f9; text-shadow: 0 0 8px var(--c-accent-glow); }
 .badge-adjusted  { background: rgba(245,158,11,.15); color: #fbbf24; border-color: rgba(245,158,11,.25); }
 .badge-limited   { background: rgba(6,182,212,.15); color: #67e8f9; border-color: rgba(6,182,212,.25); }
 
+/* ── Urgent panels (overdue / due-soon at top of dashboard) ── */
+.urgent-panel {
+  background: var(--c-surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+  animation: urgentSlideIn .4s ease-out;
+}
+@keyframes urgentSlideIn {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.urgent-panel-danger { box-shadow: 0 0 24px var(--c-danger-glow), var(--shadow); }
+.urgent-panel-warning { box-shadow: 0 0 24px rgba(245,158,11,.18), var(--shadow); }
+
+.urgent-panel .card-header h2 { font-size: 1rem; font-weight: 700; }
+.urgent-panel .table-wrap { margin: 0; }
+.urgent-panel table { font-size: .88rem; }
+.urgent-panel table thead th { position: sticky; top: 0; background: var(--c-surface-2); }
+
+.urgent-panel-body {
+  max-height: 500px;
+  overflow-y: auto;
+  transition: max-height .35s ease, opacity .3s ease;
+}
+.urgent-panel.collapsed .urgent-panel-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+.urgent-panel.collapsed .panel-toggle {
+  transform: rotate(-90deg);
+}
+
 @keyframes badgePulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: .7; }
