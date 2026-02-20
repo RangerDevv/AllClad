@@ -13,7 +13,7 @@
   </div>
   <p style="color:var(--c-text-lt);margin-bottom:1.25rem;font-size:.92rem;">
     Upload your calibration spreadsheet (CSV format) to bulk-import tools. The system reads the AllClad
-    QC-FM-065 format with columns: DEPT, Manufacturer, Type/Model, Asset / Serial No., Calibration Interval, etc.
+    QC-FM-065 format. Note/comment rows above the header are automatically skipped.
   </p>
 
   <form method="post" enctype="multipart/form-data">
@@ -35,7 +35,8 @@
     <h2>Expected CSV Format</h2>
   </div>
   <div style="color:var(--c-text-lt);font-size:.9rem;line-height:1.7;">
-    <p>The CSV should have these column headers (matching the AllClad QC-FM-065 format):</p>
+    <p>The CSV should have these column headers (matching the AllClad QC-FM-065 format).
+       The header row is detected automatically — any note/comment lines above it are skipped.</p>
     <div class="table-wrap" style="margin-top:.75rem;">
       <table>
         <thead>
@@ -49,23 +50,28 @@
           <tr><td><strong>DEPT</strong></td><td>Location / Department</td><td>Yes</td></tr>
           <tr><td><strong>Manufacturer</strong></td><td>Manufacturer</td><td>No</td></tr>
           <tr><td><strong>Type/Model</strong></td><td>Tool Name + Type</td><td>Recommended</td></tr>
-          <tr><td><strong>Asset / Serial No.</strong></td><td>Serial Number</td><td>Yes</td></tr>
-          <tr><td><strong>Calibration Interval</strong></td><td>Schedule (6 Months, Yearly, etc.)</td><td>No</td></tr>
+          <tr><td><strong>Asset / Serial No.</strong></td><td>Serial Number</td><td>Recommended</td></tr>
+          <tr><td><strong>Calibration Interval</strong></td><td>Schedule (6 Months, Yearly, 5/years, etc.)</td><td>No</td></tr>
           <tr><td><strong>Calibration Company</strong></td><td>Stored in record</td><td>No</td></tr>
           <tr><td><strong>In-Service Date</strong></td><td>Service In Date</td><td>No</td></tr>
           <tr><td><strong>Out-of-Service date</strong></td><td>Service Out Date</td><td>No</td></tr>
           <tr><td><strong>Status (Active/Inactive)</strong></td><td>Tool Status</td><td>No</td></tr>
           <tr><td><strong>Person Responsible</strong></td><td>Owner</td><td>No</td></tr>
           <tr><td><strong>Notes</strong></td><td>Comments</td><td>No</td></tr>
-          <tr><td><strong>Calibration Date</strong></td><td>Last Calibration Date</td><td>No</td></tr>
-          <tr><td><strong>Calibration/Certificate</strong></td><td>Sticker ID / Cert #</td><td>No</td></tr>
+          <tr><td><strong>Calibration Date</strong></td><td>Last Calibration Date (use "x" for calibrated, or a date)</td><td>No</td></tr>
+          <tr><td><strong>Calibration/Certificate</strong></td><td>Certificate # / Sticker ID</td><td>No</td></tr>
         </tbody>
       </table>
     </div>
     <p style="margin-top:1rem;">
       <i class="fas fa-info-circle" style="color:var(--c-accent);"></i>
-      Duplicate serial numbers are skipped (existing tools won't be overwritten).
-      Tools marked as missing or broken in the Notes column are automatically set to the appropriate status.
+      <strong>Auto-detected statuses:</strong> Tools with "missing", "broken", "damaged", "out of service",
+      "not in spec", or "rejected" in the Notes column are automatically set to the appropriate status.
+    </p>
+    <p>
+      <i class="fas fa-info-circle" style="color:var(--c-accent);"></i>
+      Duplicate serial numbers are matched to existing tools — notes and certificate info are merged,
+      but existing tools are not overwritten. Re-importing the same file is safe.
     </p>
   </div>
 </div>

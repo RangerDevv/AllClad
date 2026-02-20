@@ -884,6 +884,9 @@ def certificates():
 
 # ── CSV Import ──────────────────────────────────────────────────────────────
 
+# Known column header names from the AllClad QC-FM-065 spreadsheet
+EXPECTED_HEADERS = {"dept", "manufacturer", "type/model", "asset / serial no."}
+
 SCHEDULE_MAP = {
     "monthly": "monthly",
     "quarterly": "quarterly",
@@ -893,10 +896,12 @@ SCHEDULE_MAP = {
     "semi-annual": "semiannual",
     "yearly": "annual",
     "annual": "annual",
+    "1 year": "annual",
     "12 months": "annual",
     "biennial": "biennial",
     "24 months": "biennial",
     "2 years": "biennial",
+    "5 years": "custom",
 }
 
 
@@ -908,10 +913,87 @@ def parse_schedule(raw):
     for key, val in SCHEDULE_MAP.items():
         if key in cleaned:
             return val
-    # Check for year patterns like "5/years/2026"
+    # Check for patterns like "5/years/2026" or "5 Years"
+    m = re.match(r"(\d+)\s*/?\s*years?", cleaned)
+    if m:
+        n = int(m.group(1))
+        if n == 1:
+            return "annual"
+        if n == 2:
+            return "biennial"
+        return "custom"  # will set custom_interval_days below
     if "year" in cleaned:
         return "annual"
     return "annual"
+
+
+def parse_custom_days(raw):
+    """If the schedule is a multi-year custom interval, return the number of days."""
+    if not raw:
+        return None
+    m = re.match(r"(\d+)\s*/?\s*years?", raw.strip().lower())
+    if m:
+        n = int(m.group(1))
+        if n > 2:
+            return n * 365
+    return None
+
+
+def try_parse_date(raw):
+    """Try multiple date formats and return a date object or None."""
+    if not raw:
+        return None
+    raw = raw.strip()
+    # Skip marker values
+    if raw.lower() in ("x", "missing", "not checked", ""):
+        return None
+    # ISO format: 2024-09-11
+    try:
+        return date.fromisoformat(raw)
+    except (ValueError, TypeError):
+        pass
+    # US format: 9/11/24 or 9/11/2024 or 12/14/24
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except (ValueError, TypeError):
+            pass
+    # Formats with parentheses like "(9/11/24)"
+    paren_match = re.search(r"\((\d{1,2}/\d{1,2}/\d{2,4})\)", raw)
+    if paren_match:
+        return try_parse_date(paren_match.group(1))
+    return None
+
+
+def find_header_row(lines):
+    """Find the actual header row in the CSV by looking for known column names.
+    The AllClad CSV often has note/comment rows before the real headers.
+    Returns the index of the header row, or 0 if not found.
+    """
+    for idx, line in enumerate(lines):
+        lower = line.lower()
+        # Check if this line contains the expected column headers
+        if "dept" in lower and "manufacturer" in lower and "type/model" in lower:
+            return idx
+    return 0
+
+
+def make_unique_serial(base_serial, dept, row_num):
+    """Generate a serial number, ensuring it has a value."""
+    if base_serial:
+        return base_serial
+    return f"NOSN-{dept[:3].upper()}-{row_num:04d}-{uuid.uuid4().hex[:6]}"
+
+
+def make_unique_log_number(dept, row_num):
+    """Generate a unique log number that doesn't conflict with existing ones."""
+    base = f"CSV-{dept[:3].upper()}-{row_num:04d}"
+    candidate = base
+    suffix = 0
+    while Tool.query.filter(Tool.log_number == candidate).first():
+        suffix += 1
+        candidate = f"{base}-{suffix}"
+    return candidate
 
 
 @app.route("/csv-import", methods=["GET", "POST"])
@@ -927,100 +1009,197 @@ def csv_import():
             return redirect(url_for("csv_import"))
 
         try:
-            stream = io.StringIO(f.stream.read().decode("utf-8", errors="replace"))
+            raw_text = f.stream.read().decode("utf-8", errors="replace")
+            lines = raw_text.splitlines()
+
+            if not lines:
+                flash("CSV file is empty.", "danger")
+                return redirect(url_for("csv_import"))
+
+            # ── Find the real header row (skip leading note/comment rows) ──
+            header_idx = find_header_row(lines)
+            csv_body = "\n".join(lines[header_idx:])
+
+            stream = io.StringIO(csv_body)
             reader = csv.DictReader(stream)
+
+            # Normalise header names so lookup is flexible
+            if reader.fieldnames:
+                reader.fieldnames = [h.strip() for h in reader.fieldnames]
 
             imported = 0
             skipped = 0
             updated = 0
-            errors = []
+            row_errors = []
 
-            for i, row in enumerate(reader, start=2):
-                # Skip empty rows or header-like rows
-                dept = (row.get("DEPT") or "").strip()
-                if not dept or dept.lower() == "dept":
-                    continue
+            for i, row in enumerate(reader, start=header_idx + 2):
+                try:
+                    # ── Read every column, tolerating slight header variations ──
+                    dept = (row.get("DEPT") or "").strip()
+                    if not dept or dept.lower() == "dept":
+                        continue  # skip sub-header or blank rows
 
-                manufacturer = (row.get("Manufacturer") or "").strip()
-                type_model = (row.get("Type/Model") or "").strip()
-                asset_serial = (row.get("Asset / Serial No.") or row.get("Asset / Serial No") or "").strip()
-                interval = (row.get("Calibration Interval") or "").strip()
-                cal_company = (row.get("Calibration Company") or "").strip()
-                in_service = (row.get("In-Service Date") or "").strip()
-                out_service = (row.get("Out-of-Service date") or row.get("Out-of-Service Date") or "").strip()
-                status_raw = (row.get("Status (Active/Inactive)") or "").strip()
-                person = (row.get("Person Responsible (if applicable)") or "").strip()
-                notes = (row.get("Notes") or "").strip()
-                cal_date_raw = (row.get("Calibration Date") or "").strip()
-                cert = (row.get("Calibration/Certificate") or "").strip()
+                    manufacturer = (row.get("Manufacturer") or "").strip()
+                    type_model = (row.get("Type/Model") or "").strip()
 
-                if not asset_serial and not type_model:
+                    # Try several possible header names for the serial column
+                    asset_serial = ""
+                    for key in ("Asset / Serial No.", "Asset / Serial No",
+                                "Asset / Serial No..", "Asset/Serial No."):
+                        val = (row.get(key) or "").strip()
+                        if val:
+                            asset_serial = val
+                            break
+
+                    interval = (row.get("Calibration Interval") or "").strip()
+                    cal_company = (row.get("Calibration Company") or "").strip()
+                    in_service = (row.get("In-Service Date") or "").strip()
+                    out_service = (
+                        row.get("Out-of-Service date")
+                        or row.get("Out-of-Service Date")
+                        or ""
+                    ).strip()
+                    status_raw = (row.get("Status (Active/Inactive)") or "").strip()
+                    person = (
+                        row.get("Person Responsible (if applicable)")
+                        or row.get("Person Responsible")
+                        or ""
+                    ).strip()
+                    notes = (row.get("Notes") or "").strip()
+                    cal_date_raw = (row.get("Calibration Date") or "").strip()
+                    cert = (row.get("Calibration/Certificate") or "").strip()
+
+                    # ── Skip rows that have no useful data ──
+                    if not asset_serial and not type_model and not manufacturer:
+                        skipped += 1
+                        continue
+
+                    # ── Build serial number ──
+                    serial = make_unique_serial(asset_serial, dept, i)
+
+                    # ── Check for existing tool by serial number ──
+                    existing = Tool.query.filter(Tool.serial_number == serial).first()
+                    if existing:
+                        # Merge any new notes into existing record
+                        changed = False
+                        if notes and notes not in (existing.comments or ""):
+                            existing.comments = (
+                                (existing.comments or "")
+                                + ("\n" if existing.comments else "")
+                                + notes
+                            )
+                            changed = True
+                        if cert and cert.lower() not in ("x", "missing", "not checked"):
+                            if cert not in (existing.sticker_id or ""):
+                                existing.sticker_id = cert
+                                changed = True
+                        if person and not existing.owner:
+                            existing.owner = person
+                            changed = True
+                        if changed:
+                            updated += 1
+                        else:
+                            skipped += 1
+                        continue
+
+                    # ── Build tool name from type/model ──
+                    name = type_model if type_model else f"{manufacturer} instrument"
+
+                    # ── Schedule ──
+                    schedule = parse_schedule(interval)
+                    custom_days = parse_custom_days(interval) if schedule == "custom" else None
+
+                    # ── Determine status from Status column + Notes ──
+                    notes_lower = notes.lower()
+                    cal_marker = cal_date_raw.lower() if cal_date_raw else ""
+                    cert_lower = cert.lower() if cert else ""
+
+                    tool_status = "active"
+                    if status_raw.lower() in ("inactive", "retired"):
+                        tool_status = "retired"
+                    elif "missing" in notes_lower or cal_marker == "missing":
+                        tool_status = "not_in_use"
+                    elif "broken" in notes_lower or "damaged" in notes_lower:
+                        tool_status = "out_of_cal"
+                    elif "out of service" in notes_lower:
+                        tool_status = "retired"
+                    elif "not in spec" in notes_lower or "not in spec" in cert_lower:
+                        tool_status = "out_of_cal"
+                    elif "rejected" in notes_lower:
+                        tool_status = "out_of_cal"
+                    elif "fail" in cert_lower:
+                        tool_status = "out_of_cal"
+
+                    on_backup = tool_status in ("retired", "not_in_use", "out_of_cal")
+
+                    # ── Generate unique log number ──
+                    log_number = make_unique_log_number(dept, i)
+
+                    # ── Clean up certificate / sticker ID ──
+                    sticker = ""
+                    if cert and cert.lower() not in (
+                        "x", "missing", "not checked",
+                        "not in spec after calibration",
+                        "checked but broken", "found",
+                    ):
+                        sticker = cert
+
+                    # ── Build tool record ──
+                    tool = Tool(
+                        name=name,
+                        tool_type=type_model,
+                        manufacturer=manufacturer,
+                        serial_number=serial,
+                        log_number=log_number,
+                        location=dept,
+                        owner=person,
+                        schedule=schedule,
+                        custom_interval_days=custom_days,
+                        status=tool_status,
+                        on_backup_list=on_backup,
+                        comments=notes,
+                        sticker_id=sticker,
+                    )
+
+                    # ── Parse dates ──
+                    # In-Service Date
+                    svc_in = try_parse_date(in_service)
+                    if svc_in:
+                        tool.service_in_date = svc_in
+
+                    # Out-of-Service Date
+                    svc_out = try_parse_date(out_service)
+                    if svc_out:
+                        tool.service_out_date = svc_out
+
+                    # The "Calibration Date" column is often just "x" (= was calibrated)
+                    # Try to extract a real date from it, or fall back to dates in Notes
+                    cal_date = try_parse_date(cal_date_raw)
+                    if not cal_date:
+                        # Try to pull a date from the Notes column
+                        # e.g. "Calibrated (9/11/24) by Rowe Line"
+                        cal_date = try_parse_date(notes)
+                    if cal_date:
+                        tool.last_calibration_date = cal_date
+                        tool.recalculate_next_date()
+
+                    db.session.add(tool)
+                    imported += 1
+
+                except Exception as row_err:
+                    row_errors.append(f"Row {i}: {str(row_err)}")
                     skipped += 1
                     continue
 
-                # Generate a serial number from asset/serial field or manufacture a unique one
-                serial = asset_serial if asset_serial else f"IMPORT-{uuid.uuid4().hex[:8]}"
-
-                # Check if tool with this serial already exists
-                existing = Tool.query.filter(Tool.serial_number == serial).first()
-                if existing:
-                    # Update notes if new info
-                    if notes and notes not in (existing.comments or ""):
-                        existing.comments = (existing.comments or "") + ("\n" if existing.comments else "") + notes
-                    updated += 1
-                    continue
-
-                # Build tool name from type/model or manufacturer
-                name = type_model if type_model else f"{manufacturer} instrument"
-
-                schedule = parse_schedule(interval)
-
-                # Determine status
-                tool_status = "active"
-                if status_raw.lower() in ("inactive", "retired"):
-                    tool_status = "retired"
-                if "missing" in notes.lower():
-                    tool_status = "not_in_use"
-                if "broken" in notes.lower() or "damaged" in notes.lower():
-                    tool_status = "out_of_cal"
-
-                on_backup = tool_status in ("retired", "not_in_use")
-
-                # Generate log number
-                log_number = f"CSV-{dept[:3].upper()}-{i:04d}"
-
-                tool = Tool(
-                    name=name,
-                    tool_type=type_model,
-                    manufacturer=manufacturer,
-                    serial_number=serial,
-                    log_number=log_number,
-                    location=dept,
-                    owner=person,
-                    schedule=schedule,
-                    status=tool_status,
-                    on_backup_list=on_backup,
-                    comments=notes,
-                    sticker_id=cert if cert and cert.lower() not in ("x", "missing", "not checked") else "",
-                )
-
-                # Try to parse calibration date
-                if cal_date_raw and cal_date_raw.lower() != "x":
-                    try:
-                        tool.last_calibration_date = date.fromisoformat(cal_date_raw)
-                        tool.recalculate_next_date()
-                    except ValueError:
-                        pass  # non-standard date, skip
-
-                db.session.add(tool)
-                imported += 1
-
             db.session.commit()
-            flash(
-                f"CSV imported: {imported} new tools, {updated} existing updated, {skipped} rows skipped.",
-                "success",
-            )
+
+            msg = f"CSV imported: {imported} new tools added, {updated} existing updated, {skipped} rows skipped."
+            if row_errors:
+                msg += f" ({len(row_errors)} rows had errors — check data.)"
+            flash(msg, "success")
+
         except Exception as e:
+            db.session.rollback()
             flash(f"Error reading CSV: {str(e)}", "danger")
 
         return redirect(url_for("csv_import"))
