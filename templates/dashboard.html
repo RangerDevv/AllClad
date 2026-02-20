@@ -14,6 +14,16 @@
 
 {% block content %}
 
+<!-- ── Greeting Banner ─────────────────────────────────────────── -->
+<div class="greeting-banner">
+  <h2>Welcome back, AllClad</h2>
+  <p>{{ tools|length }} tool{{ 's' if tools|length != 1 }} on your radar.
+    {% if alert_overdue > 0 %}<strong>{{ alert_overdue }} overdue.</strong>{% endif %}
+    {% if alert_due_soon > 0 %}<strong>{{ alert_due_soon }} due soon.</strong>{% endif %}
+    {% if alert_overdue == 0 and alert_due_soon == 0 %}Everything is looking clean.{% endif %}
+  </p>
+</div>
+
 <!-- ── Overdue Tools Panel ──────────────────────────────────────── -->
 {% if overdue_tools %}
 <div class="card urgent-panel urgent-panel-danger" style="margin-bottom:1.25rem;border-left:4px solid var(--c-danger);">
@@ -109,16 +119,6 @@
   </div>
 </div>
 {% endif %}
-
-<!-- ── Greeting Banner ─────────────────────────────────────────── -->
-<div class="greeting-banner">
-  <h2>Welcome back, AllClad</h2>
-  <p>{{ tools|length }} tool{{ 's' if tools|length != 1 }} on your radar.
-    {% if alert_overdue > 0 %}<strong>{{ alert_overdue }} overdue.</strong>{% endif %}
-    {% if alert_due_soon > 0 %}<strong>{{ alert_due_soon }} due soon.</strong>{% endif %}
-    {% if alert_overdue == 0 and alert_due_soon == 0 %}Everything is looking clean.{% endif %}
-  </p>
-</div>
 
 <!-- ── Stat Cards ──────────────────────────────────────────────── -->
 <div class="stats-row">
