@@ -71,8 +71,7 @@ class Tool(db.Model):
     tool_type = db.Column(db.String(100), default="")          # e.g. Micrometer, Caliper
     manufacturer = db.Column(db.String(200), default="")
     model_number = db.Column(db.String(100), default="")
-    serial_number = db.Column(db.String(100), default="")       # optional – some tools don't have one
-    tool_id_number = db.Column(db.String(100), default="")      # I.D. from Cal Tec Labs certificates
+    serial_number = db.Column(db.String(100), unique=True, nullable=False)
     log_number = db.Column(db.String(100), unique=True, nullable=False)
     location = db.Column(db.String(200), default="")
     owner = db.Column(db.String(200), default="")
@@ -138,21 +137,11 @@ class Tool(db.Model):
     def is_on_main_list(self):
         return not self.on_backup_list and self.status not in ("retired",)
 
-    @property
-    def display_identifier(self):
-        """Return the best identifier for display purposes."""
-        if self.serial_number:
-            return self.serial_number
-        if self.tool_id_number:
-            return f"ID:{self.tool_id_number}"
-        return self.log_number
-
     def to_dict(self):
         return {
             "id": self.id,
             "name": self.name,
             "serial_number": self.serial_number,
-            "tool_id_number": self.tool_id_number,
             "log_number": self.log_number,
             "location": self.location,
             "owner": self.owner,
@@ -168,7 +157,7 @@ class Tool(db.Model):
         return f"<Tool {self.log_number} – {self.name}>"
 
 
-# ── Calibration Record (unified – includes test report data) ────────────────
+# ── Calibration Record ──────────────────────────────────────────────────────
 
 class CalibrationRecord(db.Model):
     __tablename__ = "calibration_records"
@@ -177,40 +166,20 @@ class CalibrationRecord(db.Model):
     tool_id = db.Column(db.Integer, db.ForeignKey("tools.id"), nullable=False)
 
     calibration_date = db.Column(db.Date, nullable=False)
-    due_date = db.Column(db.Date, nullable=True)                 # Cal. Due Date from cert
-    performed_by = db.Column(db.String(200), default="")         # Service Technician
-    calibration_company = db.Column(db.String(200), default="")  # e.g. Cal Tec Labs
-    certificate_number = db.Column(db.String(100), default="")   # Cert #
-    result = db.Column(db.String(20), default="pass")            # pass / fail / adjusted / limited
-    as_found = db.Column(db.String(50), default="")              # As Found: PASS / FAIL / LTD.
-    as_left = db.Column(db.String(50), default="")               # As Left: PASS / FAIL / LTD.
+    performed_by = db.Column(db.String(200), default="")
+    calibration_company = db.Column(db.String(200), default="")
+    certificate_number = db.Column(db.String(100), default="")
+    result = db.Column(db.String(20), default="pass")           # pass / fail / adjusted / limited
     notes = db.Column(db.Text, default="")
-
-    # Report metadata (merged from old TestReport concept)
-    report_number = db.Column(db.String(100), default="")        # Report ID / CTR number
-    source_company = db.Column(db.String(200), default="")       # Mettler-Toledo, Cal Tec Labs, etc.
-
-    # Calibration environment
-    temperature = db.Column(db.String(50), default="")           # e.g. "70 F / 40"
-    cal_interval = db.Column(db.String(50), default="")          # e.g. "6 MONTHS"
-
-    # Equipment info from cert (for cross-reference)
-    cert_tool_id = db.Column(db.String(100), default="")         # I.D. on the cert
-    cert_serial = db.Column(db.String(100), default="")          # Serial on the cert
-    cert_model = db.Column(db.String(100), default="")           # Model on the cert
-    cert_description = db.Column(db.String(300), default="")     # Description on the cert
-
-    # Test points data (JSON string)
-    test_points = db.Column(db.Text, default="")                 # JSON array of test point rows
-
-    # Standards used (JSON string)
-    standards_used = db.Column(db.Text, default="")              # JSON array of standards rows
 
     # If it failed, flag investment need
     requires_replacement = db.Column(db.Boolean, default=False)
     replacement_notes = db.Column(db.Text, default="")
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Linked test report
+    test_report_id = db.Column(db.Integer, db.ForeignKey("test_reports.id"), nullable=True)
 
     # Linked certificate files
     certificates = db.relationship(
@@ -220,6 +189,28 @@ class CalibrationRecord(db.Model):
 
     def __repr__(self):
         return f"<CalibrationRecord {self.id} tool={self.tool_id} date={self.calibration_date}>"
+
+
+# ── Test Report ─────────────────────────────────────────────────────────────
+
+class TestReport(db.Model):
+    __tablename__ = "test_reports"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(300), nullable=False)
+    report_number = db.Column(db.String(100), default="")
+    report_date = db.Column(db.Date, nullable=True)
+    source_company = db.Column(db.String(200), default="")      # company that issued the report
+    notes = db.Column(db.Text, default="")
+    file_path = db.Column(db.String(500), default="")           # path to uploaded file
+    original_filename = db.Column(db.String(300), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Linked calibration records
+    calibrations = db.relationship("CalibrationRecord", backref="test_report", lazy="dynamic")
+
+    def __repr__(self):
+        return f"<TestReport {self.report_number} – {self.title}>"
 
 
 # ── File Attachment (generic – certs, photos, docs) ─────────────────────────
