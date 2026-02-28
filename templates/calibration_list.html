@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Calibration Records{% endblock %}
+{% block page_title %}
+  <i class="fas fa-clipboard-check"></i> Calibration Records
+  <span class="text-muted text-sm" style="margin-left:.75rem;">{{ records|length }} record{{ 's' if records|length != 1 }}</span>
+{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('bulk_upload') }}" class="btn btn-primary btn-sm">
+    <i class="fas fa-cloud-upload-alt"></i> Bulk Upload
+  </a>
+{% endblock %}
+
+{% block content %}
+
+{% if records %}
+<div class="card" style="padding:0;">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Cal Date</th>
+          <th>Due Date</th>
+          <th>Tool</th>
+          <th>Cert #</th>
+          <th>Result</th>
+          <th>As Found</th>
+          <th>As Left</th>
+          <th>Performed By</th>
+          <th>Company</th>
+          <th>Certificate</th>
+          <th>View</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cal in records %}
+        <tr>
+          <td class="text-sm">{{ cal.calibration_date }}</td>
+          <td class="text-sm">{{ cal.due_date or '—' }}</td>
+          <td>
+            <a href="{{ url_for('tool_detail', tool_id=cal.tool.id) }}">
+              <strong>{{ cal.tool.name }}</strong>
+            </a>
+            <br><span class="text-sm text-muted">{{ cal.tool.log_number }}</span>
+          </td>
+          <td class="text-sm">{{ cal.certificate_number or '—' }}</td>
+          <td>
+            {% if cal.result == 'pass' %}
+              <span class="badge badge-pass">PASS</span>
+            {% elif cal.result == 'fail' %}
+              <span class="badge badge-fail">FAIL</span>
+            {% elif cal.result == 'limited' %}
+              <span class="badge badge-limited">LTD</span>
+            {% else %}
+              <span class="badge badge-active">{{ cal.result | upper }}</span>
+            {% endif %}
+          </td>
+          <td class="text-sm">{{ cal.as_found or '—' }}</td>
+          <td class="text-sm">{{ cal.as_left or '—' }}</td>
+          <td class="text-sm">{{ cal.performed_by or '—' }}</td>
+          <td class="text-sm">{{ cal.calibration_company or cal.source_company or '—' }}</td>
+          <td>
+            {% set cert_files = cal.certificates.all() %}
+            {% if cert_files %}
+              {% for cf in cert_files %}
+                <a href="{{ url_for('uploaded_file', filename=cf.filename) }}" target="_blank" class="btn btn-outline btn-sm" style="white-space:nowrap;">
+                  <i class="fas fa-file-pdf"></i> View
+                </a>
+              {% endfor %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('tool_detail', tool_id=cal.tool.id) }}" class="btn btn-secondary btn-sm">
+              <i class="fas fa-eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <i class="fas fa-clipboard-check empty-icon"></i>
+  <p>No calibration records yet.</p>
+  <a href="{{ url_for('bulk_upload') }}" class="btn btn-primary"><i class="fas fa-cloud-upload-alt"></i> Bulk Upload</a>
+</div>
+{% endif %}
+
+{% endblock %}

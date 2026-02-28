@@ -46,7 +46,8 @@
 
   <div class="detail-grid">
     <div class="detail-item"><label>Log Number</label><span>{{ tool.log_number }}</span></div>
-    <div class="detail-item"><label>Serial Number</label><span>{{ tool.serial_number }}</span></div>
+    <div class="detail-item"><label>Serial Number</label><span>{{ tool.serial_number or '—' }}</span></div>
+    <div class="detail-item"><label>I.D. Number</label><span>{{ tool.tool_id_number or '—' }}</span></div>
     <div class="detail-item"><label>Sticker ID</label><span>{{ tool.sticker_id or '—' }}</span></div>
     <div class="detail-item"><label>Type</label><span>{{ tool.tool_type or '—' }}</span></div>
     <div class="detail-item"><label>Manufacturer</label><span>{{ tool.manufacturer or '—' }}</span></div>
@@ -88,29 +89,34 @@
     <table>
       <thead>
         <tr>
-          <th style="width:10%">Date</th>
-          <th style="width:9%">Result</th>
-          <th style="width:12%">Performed By</th>
-          <th style="width:12%">Company</th>
-          <th style="width:12%">Certificate #</th>
-          <th style="width:18%">Certificate File</th>
-          <th style="width:14%">Test Report</th>
-          <th style="width:13%">Notes</th>
+          <th style="width:10%">Cal Date</th>
+          <th style="width:10%">Due Date</th>
+          <th style="width:8%">Result</th>
+          <th style="width:9%">As Found</th>
+          <th style="width:9%">As Left</th>
+          <th style="width:11%">Performed By</th>
+          <th style="width:11%">Company</th>
+          <th style="width:10%">Cert #</th>
+          <th style="width:12%">Certificate</th>
+          <th style="width:10%">Notes</th>
         </tr>
       </thead>
       <tbody>
         {% for cal in calibrations %}
         <tr>
-          <td>{{ cal.calibration_date }}</td>
+          <td class="text-sm">{{ cal.calibration_date }}</td>
+          <td class="text-sm">{{ cal.due_date or '—' }}</td>
           <td>
             <span class="badge badge-{{ cal.result }}">{{ cal.result | upper }}</span>
             {% if cal.requires_replacement %}
-              <br><span class="text-danger text-sm"><i class="fas fa-exclamation-circle"></i> Needs replacement</span>
+              <br><span class="text-danger text-sm"><i class="fas fa-exclamation-circle"></i> Replace</span>
             {% endif %}
           </td>
-          <td>{{ cal.performed_by or '—' }}</td>
-          <td>{{ cal.calibration_company or '—' }}</td>
-          <td>{{ cal.certificate_number or '—' }}</td>
+          <td class="text-sm">{{ cal.as_found or '—' }}</td>
+          <td class="text-sm">{{ cal.as_left or '—' }}</td>
+          <td class="text-sm">{{ cal.performed_by or '—' }}</td>
+          <td class="text-sm">{{ cal.calibration_company or cal.source_company or '—' }}</td>
+          <td class="text-sm">{{ cal.certificate_number or '—' }}</td>
           <td>
             {% set cert_files = cal.certificates.all() %}
             {% if cert_files %}
@@ -121,13 +127,6 @@
               {% endfor %}
             {% else %}
               <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if cal.test_report %}
-              <a href="{{ url_for('report_detail', report_id=cal.test_report.id) }}">{{ cal.test_report.title }}</a>
-            {% else %}
-              —
             {% endif %}
           </td>
           <td class="text-sm">{{ cal.notes or '—' }}</td>

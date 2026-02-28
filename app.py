@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 import os
 import re
 import uuid
@@ -17,7 +18,7 @@ from werkzeug.utils import secure_filename
 
 from config import Config
 from models import (
-    db, Tool, CalibrationRecord, TestReport, FileAttachment,
+    db, Tool, CalibrationRecord, FileAttachment,
     SCHEDULE_CHOICES, STATUS_CHOICES, RESULT_CHOICES,
 )
 
@@ -41,6 +42,15 @@ def save_upload(file):
     stored = f"{uuid.uuid4().hex}.{ext}"
     file.save(os.path.join(app.config["UPLOAD_FOLDER"], stored))
     return stored, original
+
+
+def save_bytes(data, original_name):
+    """Save raw bytes to the upload folder and return (stored_filename, original_filename)."""
+    ext = original_name.rsplit(".", 1)[1].lower() if "." in original_name else "pdf"
+    stored = f"{uuid.uuid4().hex}.{ext}"
+    with open(os.path.join(app.config["UPLOAD_FOLDER"], stored), "wb") as f:
+        f.write(data)
+    return stored, original_name
 
 
 # ── Context processors ──────────────────────────────────────────────────────
@@ -87,7 +97,6 @@ def refresh_tool_statuses():
 @app.route("/")
 def dashboard():
     """Main tracking list with filters."""
-    # Query params for filtering
     q = request.args.get("q", "").strip()
     status_filter = request.args.get("status", "")
     schedule_filter = request.args.get("schedule", "")
@@ -105,6 +114,7 @@ def dashboard():
             db.or_(
                 Tool.name.ilike(like),
                 Tool.serial_number.ilike(like),
+                Tool.tool_id_number.ilike(like),
                 Tool.log_number.ilike(like),
                 Tool.sticker_id.ilike(like),
                 Tool.owner.ilike(like),
@@ -124,13 +134,10 @@ def dashboard():
     if router_filter:
         query = query.filter(Tool.router == router_filter)
 
-    # Sorting
     col = getattr(Tool, sort, Tool.next_calibration_date)
     query = query.order_by(col.asc() if order == "asc" else col.desc())
-
     tools = query.all()
 
-    # Urgent tools (always fetched regardless of current filters)
     overdue_tools = Tool.query.filter(
         Tool.status == "overdue", Tool.on_backup_list == False
     ).order_by(Tool.next_calibration_date.asc()).all()
@@ -138,7 +145,6 @@ def dashboard():
         Tool.status == "due_soon", Tool.on_backup_list == False
     ).order_by(Tool.next_calibration_date.asc()).all()
 
-    # Distinct values for filter dropdowns
     locations = [r[0] for r in db.session.query(Tool.location).distinct() if r[0]]
     owners = [r[0] for r in db.session.query(Tool.owner).distinct() if r[0]]
     routers = [r[0] for r in db.session.query(Tool.router).distinct() if r[0]]
@@ -158,13 +164,16 @@ def dashboard():
 @app.route("/tools/new", methods=["GET", "POST"])
 def tool_new():
     if request.method == "POST":
+        serial = request.form.get("serial_number", "").strip()
+        tool_id_num = request.form.get("tool_id_number", "").strip()
         tool = Tool(
             name=request.form.get("name", "").strip(),
             description=request.form.get("description", "").strip(),
             tool_type=request.form.get("tool_type", "").strip(),
             manufacturer=request.form.get("manufacturer", "").strip(),
             model_number=request.form.get("model_number", "").strip(),
-            serial_number=request.form.get("serial_number", "").strip(),
+            serial_number=serial,
+            tool_id_number=tool_id_num,
             log_number=request.form.get("log_number", "").strip(),
             location=request.form.get("location", "").strip(),
             owner=request.form.get("owner", "").strip(),
@@ -175,7 +184,6 @@ def tool_new():
             sticker_id=request.form.get("sticker_id", "").strip(),
             comments=request.form.get("comments", "").strip(),
         )
-        # Dates
         lcd = request.form.get("last_calibration_date")
         if lcd:
             tool.last_calibration_date = date.fromisoformat(lcd)
@@ -205,6 +213,7 @@ def tool_edit(tool_id):
         tool.manufacturer = request.form.get("manufacturer", "").strip()
         tool.model_number = request.form.get("model_number", "").strip()
         tool.serial_number = request.form.get("serial_number", "").strip()
+        tool.tool_id_number = request.form.get("tool_id_number", "").strip()
         tool.log_number = request.form.get("log_number", "").strip()
         tool.location = request.form.get("location", "").strip()
         tool.owner = request.form.get("owner", "").strip()
@@ -239,11 +248,9 @@ def tool_detail(tool_id):
     tool = Tool.query.get_or_404(tool_id)
     calibrations = tool.calibrations.order_by(CalibrationRecord.calibration_date.desc()).all()
     attachments = tool.attachments.order_by(FileAttachment.uploaded_at.desc()).all()
-    test_reports = TestReport.query.all()  # for linking dropdown
     return render_template(
         "tool_detail.html", tool=tool,
         calibrations=calibrations, attachments=attachments,
-        test_reports=test_reports,
     )
 
 
@@ -310,13 +317,8 @@ def calibrate(tool_id):
             replacement_notes=request.form.get("replacement_notes", "").strip() if result == "fail" else "",
         )
 
-        # Link to test report
-        tr_id = request.form.get("test_report_id")
-        if tr_id:
-            record.test_report_id = int(tr_id)
-
         db.session.add(record)
-        db.session.flush()  # get record.id for cert linking
+        db.session.flush()
 
         # Update tool dates
         tool.last_calibration_date = cal_date
@@ -341,60 +343,10 @@ def calibrate(tool_id):
             db.session.add(attachment)
 
         db.session.commit()
-
         flash(f"Calibration logged for '{tool.name}' - {result.upper()}.", "success")
         return redirect(url_for("tool_detail", tool_id=tool.id))
 
-    test_reports = TestReport.query.order_by(TestReport.report_date.desc()).all()
-    return render_template("calibration_form.html", tool=tool, test_reports=test_reports)
-
-
-# ── Test Reports ────────────────────────────────────────────────────────────
-
-@app.route("/reports")
-def test_reports():
-    reports = TestReport.query.order_by(TestReport.report_date.desc()).all()
-    return render_template("test_reports.html", reports=reports)
-
-
-@app.route("/reports/new", methods=["GET", "POST"])
-def report_new():
-    if request.method == "POST":
-        report = TestReport(
-            title=request.form.get("title", "").strip(),
-            report_number=request.form.get("report_number", "").strip(),
-            report_date=date.fromisoformat(request.form["report_date"]) if request.form.get("report_date") else None,
-            source_company=request.form.get("source_company", "").strip(),
-            notes=request.form.get("notes", "").strip(),
-        )
-        rfile = request.files.get("report_file")
-        if rfile and rfile.filename and allowed_file(rfile.filename):
-            stored, original = save_upload(rfile)
-            report.file_path = stored
-            report.original_filename = original
-
-        db.session.add(report)
-        db.session.commit()
-        flash(f"Test report '{report.title}' saved.", "success")
-        return redirect(url_for("test_reports"))
-
-    return render_template("report_form.html", report=None, editing=False)
-
-
-@app.route("/reports/<int:report_id>")
-def report_detail(report_id):
-    report = TestReport.query.get_or_404(report_id)
-    linked_cals = report.calibrations.all()
-    return render_template("report_detail.html", report=report, linked_cals=linked_cals)
-
-
-@app.route("/reports/<int:report_id>/delete", methods=["POST"])
-def report_delete(report_id):
-    report = TestReport.query.get_or_404(report_id)
-    db.session.delete(report)
-    db.session.commit()
-    flash("Test report deleted.", "warning")
-    return redirect(url_for("test_reports"))
+    return render_template("calibration_form.html", tool=tool)
 
 
 # ── File Uploads / Downloads ───────────────────────────────────────────────
@@ -410,51 +362,18 @@ def upload_file(tool_id):
         flash("File type not allowed.", "danger")
         return redirect(url_for("tool_detail", tool_id=tool.id))
     stored, original = save_upload(f)
-    user_type = request.form.get("file_type", "auto")
-
-    # Auto-detect PDF type if set to auto
-    detected_type = user_type
-    pdf_text = ""
-    if original.lower().endswith(".pdf") and user_type in ("auto", "misc"):
-        filepath = os.path.join(app.config["UPLOAD_FOLDER"], stored)
-        pdf_text = extract_pdf_text(filepath)
-        if pdf_text:
-            detected_type = classify_pdf(pdf_text, original)
-
-    if detected_type == "report" and original.lower().endswith(".pdf"):
-        # Auto-create a TestReport entry
-        if not pdf_text:
-            filepath = os.path.join(app.config["UPLOAD_FOLDER"], stored)
-            pdf_text = extract_pdf_text(filepath)
-        meta = extract_report_metadata(pdf_text, original)
-        report = TestReport(
-            title=meta["title"],
-            report_number=meta["report_number"],
-            report_date=meta["report_date"],
-            source_company=meta["source_company"],
-            file_path=stored,
-            original_filename=original,
-            notes=request.form.get("notes", "") or "Auto-detected as test report",
-        )
-        db.session.add(report)
-        db.session.flush()
-        # Link to most recent calibration record
-        latest_cal = CalibrationRecord.query.filter_by(tool_id=tool.id)\
-            .order_by(CalibrationRecord.calibration_date.desc()).first()
-        if latest_cal and not latest_cal.test_report_id:
-            latest_cal.test_report_id = report.id
+    user_type = request.form.get("file_type", "cert")
 
     attachment = FileAttachment(
         tool_id=tool.id,
         filename=stored,
         original_filename=original,
-        file_type=detected_type,
+        file_type=user_type,
         notes=request.form.get("notes", ""),
     )
     db.session.add(attachment)
     db.session.commit()
-    type_label = "Test Report" if detected_type == "report" else "Certificate" if detected_type == "cert" else detected_type.title()
-    flash(f"File '{original}' uploaded as {type_label}.", "success")
+    flash(f"File '{original}' uploaded.", "success")
     return redirect(url_for("tool_detail", tool_id=tool.id))
 
 
@@ -496,6 +415,7 @@ def api_lookup():
         matches = Tool.query.filter(
             db.or_(
                 Tool.serial_number.ilike(like),
+                Tool.tool_id_number.ilike(like),
                 Tool.log_number.ilike(like),
                 Tool.sticker_id.ilike(like),
                 Tool.name.ilike(like),
@@ -509,7 +429,6 @@ def api_lookup():
 
 @app.route("/api/alerts")
 def api_alerts():
-    """Return tools that are overdue or due soon."""
     overdue = Tool.query.filter(
         Tool.status == "overdue", Tool.on_backup_list == False
     ).all()
@@ -538,7 +457,9 @@ def api_change_status(tool_id):
     return jsonify({"error": "Invalid status"}), 400
 
 
-# ── PDF Text Extraction & Matching Helpers ──────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Cal Tec Labs PDF Parser ─────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
 
 def extract_pdf_text(filepath):
     """Extract all text from a PDF using PyMuPDF."""
@@ -553,182 +474,489 @@ def extract_pdf_text(filepath):
         return ""
 
 
-def classify_pdf(text, filename=""):
-    """Determine whether a PDF is a calibration certificate or a test report.
-    Returns 'report' or 'cert'."""
-    text_lower = text.lower()
-    fn_lower = filename.lower()
+def extract_page_text(doc, page_num):
+    """Extract text from a single page."""
+    try:
+        return doc[page_num].get_text()
+    except Exception:
+        return ""
 
-    report_keywords = [
-        "test report", "comprehensive test report", "measurement results",
-        "eccentricity", "error of indication", "custom tolerance",
-        "repeatability", "report id", "report version",
-        "attachment to test report",
+
+def is_cert_start_page(text):
+    """Detect if a page is the start of a Cal Tec Labs Certificate of Calibration."""
+    lower = text.lower()
+    indicators = [
+        "certificate of calibration",
+        "cert #",
+        "cert#",
+        "serviced by",
+        "serviced for",
+        "equipment information",
     ]
-    cert_keywords = [
-        "certificate of calibration", "calibration certificate",
-        "calibration result", "cert #", "cert#", "cal date",
-        "cal. due date", "cal. interval",
-        "service technician", "serviced by", "serviced for",
-        "standards used", "procedures used", "test points",
-    ]
-
-    report_score = sum(1 for kw in report_keywords if kw in text_lower)
-    cert_score = sum(1 for kw in cert_keywords if kw in text_lower)
-
-    # Filename hints
-    if "ctr" in fn_lower or "report" in fn_lower:
-        report_score += 2
-    if "cert" in fn_lower or "cal" in fn_lower:
-        cert_score += 1
-
-    return "report" if report_score > cert_score else "cert"
+    score = sum(1 for kw in indicators if kw in lower)
+    return score >= 2
 
 
-def extract_report_metadata(text, filename=""):
-    """Extract test report metadata (report number, date, company, title) from PDF text."""
-    meta = {"title": "", "report_number": "", "report_date": None, "source_company": ""}
+def split_pdf_into_certificates(filepath):
+    """Split a multi-certificate PDF into individual certificate page groups.
+    
+    Each certificate is typically 2 pages. We detect boundaries by looking for
+    'Certificate of Calibration' at the top of pages.
+    
+    Returns list of (start_page, end_page) tuples (0-indexed, inclusive).
+    """
+    doc = fitz.open(filepath)
+    total_pages = len(doc)
+    
+    if total_pages == 0:
+        doc.close()
+        return []
+    
+    # Find all pages that start a new certificate
+    cert_starts = []
+    for i in range(total_pages):
+        text = extract_page_text(doc, i)
+        if is_cert_start_page(text):
+            cert_starts.append(i)
+    
+    doc.close()
+    
+    if not cert_starts:
+        # If we can't detect boundaries, treat entire PDF as one certificate
+        return [(0, total_pages - 1)]
+    
+    # Build page ranges: each cert starts at cert_starts[i] and ends just before cert_starts[i+1]
+    ranges = []
+    for i, start in enumerate(cert_starts):
+        if i + 1 < len(cert_starts):
+            end = cert_starts[i + 1] - 1
+        else:
+            end = total_pages - 1
+        ranges.append((start, end))
+    
+    return ranges
 
-    # Report ID / Number
+
+def extract_cert_pages_as_pdf(filepath, start_page, end_page):
+    """Extract specific pages from a PDF and return as bytes."""
+    doc = fitz.open(filepath)
+    new_doc = fitz.open()
+    for i in range(start_page, end_page + 1):
+        new_doc.insert_pdf(doc, from_page=i, to_page=i)
+    pdf_bytes = new_doc.tobytes()
+    new_doc.close()
+    doc.close()
+    return pdf_bytes
+
+
+def parse_cal_tec_cert(text):
+    """Parse a Cal Tec Labs Certificate of Calibration from extracted text.
+    
+    Returns a dict with all extracted fields.
+    """
+    data = {
+        "cert_number": "",
+        "generated_date": "",
+        "work_order": "",
+        "tool_id": "",           # I.D. field
+        "serial_number": "",
+        "manufacturer": "",
+        "model_number": "",
+        "tool_type": "",         # Type field
+        "description": "",
+        "cal_result": "",        # Calibration Result: PASS / FAIL / LTD.
+        "cal_due_date": None,
+        "cal_date": None,
+        "as_found": "",
+        "as_left": "",
+        "crib_bin": "",
+        "service_technician": "",
+        "temperature": "",
+        "cal_interval": "",
+        "test_points": [],
+        "standards_used": [],
+        "procedures_used": [],
+        "building": "",
+        "floor": "",
+        "room": "",
+    }
+    
+    if not text:
+        return data
+    
+    lines = text.split("\n")
+    
+    # ── Cert # ──
     for pat in [
-        r"Report\s*ID\s*[:=]?\s*([A-Za-z0-9\-]+)",
-        r"Report\s*(?:No\.?|Number|#)\s*[:=]?\s*([A-Za-z0-9\-]+)",
-        r"Certificate\s*Number\s*[:=]?\s*([A-Za-z0-9\-]+)",
+        r"Cert\s*#\s*[:=]?\s*(\S+)",
+        r"Cert\s*No\.?\s*[:=]?\s*(\S+)",
     ]:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
-            meta["report_number"] = m.group(1).strip()
+            data["cert_number"] = m.group(1).strip()
             break
-
-    # Source company
+    
+    # ── Generated date ──
+    m = re.search(r"Generated\s+(\d{1,2}/\d{1,2}/\d{4})", text, re.IGNORECASE)
+    if m:
+        data["generated_date"] = m.group(1).strip()
+    
+    # ── Work Order ──
+    m = re.search(r"WO\s+(\S+)", text, re.IGNORECASE)
+    if m:
+        data["work_order"] = m.group(1).strip()
+    
+    # ── I.D. ──
     for pat in [
-        r"(Mettler\s*Toledo)",
-        r"Serviced\s*By\s*[:=]?\s*(.+?)\n",
-        r"(Cal\s*Tec\s*Labs)",
+        r"I\.?D\.?\s*[:=]?\s*(\d+)",
+        r"I\.D\.\s*[:=]?\s*(\S+)",
     ]:
-        m = re.search(pat, text, re.IGNORECASE)
+        m = re.search(pat, text)
         if m:
-            meta["source_company"] = m.group(1).strip()
+            data["tool_id"] = m.group(1).strip()
             break
-
-    # Date
-    for pat in [
-        r"(?:Issue|Testing|As Found Testing)\s*Date\s*[:=]?\s*([\d]{1,2}[\-/][A-Za-z]{3}[\-/][\d]{4})",
-        r"(?:Issue|Testing|As Found Testing)\s*Date\s*[:=]?\s*([\d]{1,2}[\-/][\d]{1,2}[\-/][\d]{4})",
-    ]:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            raw = m.group(1).strip()
-            for fmt in ("%d-%b-%Y", "%m/%d/%Y", "%d/%m/%Y", "%m-%d-%Y"):
-                try:
-                    meta["report_date"] = datetime.strptime(raw, fmt).date()
-                    break
-                except ValueError:
-                    continue
-            if meta["report_date"]:
-                break
-
-    # Title — build from model/manufacturer/type if available
-    model_m = re.search(r"Model\s*[:=]?\s*([^\n]+)", text)
-    mfg_m = re.search(r"Manufacturer\s*[:=]?\s*([^\n]+)", text)
-    serial_m = re.search(r"Serial\s*No\.?\s*[:=]?\s*([^\n]+)", text)
-    parts = []
-    if mfg_m:
-        parts.append(mfg_m.group(1).strip())
-    if model_m:
-        parts.append(model_m.group(1).strip())
-    if serial_m:
-        parts.append(f"SN {serial_m.group(1).strip()}")
-    if parts:
-        meta["title"] = "Comprehensive Test Report - " + " ".join(parts)
-    elif meta["report_number"]:
-        meta["title"] = f"Test Report {meta['report_number']}"
-    else:
-        fn_base = os.path.splitext(filename)[0] if filename else "Unknown"
-        meta["title"] = f"Test Report - {fn_base}"
-
-    return meta
-
-
-def extract_identifiers(text, filename=""):
-    """Pull serial numbers, certificate numbers, and other IDs from text + filename."""
-    combined = text + "\n" + filename
-    identifiers = set()
-
-    # Split filename by underscores and hyphens for token matching
-    fn_base = os.path.splitext(filename)[0] if filename else ""
-    for token in re.split(r"[_\s]+", fn_base):
-        token = token.strip()
-        if len(token) >= 3 and not token.lower().startswith("all clad"):
-            identifiers.add(token)
-
-    # Look for common certificate / serial patterns in PDF text
-    # Serial No: XXXX  or  S/N: XXXX  or  Serial Number: XXXX
-    for pattern in [
-        r"(?:Serial\s*(?:No\.?|Number|#)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:S/N\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:Asset\s*(?:No\.?|Number|#|ID)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:Certificate\s*(?:No\.?|Number|#)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:Cert\.?\s*(?:No\.?|#)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:Order\s*(?:No\.?|Number)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:Model\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:ID\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:I\.D\.?\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-        r"(?:Sticker\s*(?:ID|#|No\.?)\s*[:=]?\s*)([A-Za-z0-9\-/]+)",
-    ]:
-        for m in re.finditer(pattern, combined, re.IGNORECASE):
-            val = m.group(1).strip().rstrip(".,;:")
-            if len(val) >= 3:
-                identifiers.add(val)
-
-    return identifiers
-
-
-def match_pdf_to_tools(identifiers):
-    """Try to match extracted identifiers against tools in the database.
-    Returns list of (tool, match_field, match_value) sorted by confidence."""
-    matches = []
-    seen_ids = set()
-    tools = Tool.query.all()
-
-    for tool in tools:
-        for ident in identifiers:
-            ident_lower = ident.lower().strip()
-            if len(ident_lower) < 3:
+    
+    # ── Serial Number ──
+    m = re.search(r"Serial\s*Number\s*[:=]?\s*(\S+)", text, re.IGNORECASE)
+    if m:
+        val = m.group(1).strip()
+        if val.lower() not in ("calibration", "cal", "cal.", "n/a", "none", ""):
+            data["serial_number"] = val
+    
+    # ── Manufacturer ──
+    m = re.search(r"Manufacturer\s+(\S+(?:\s+\S+)*?)(?:\s{2,}|\n|$)", text, re.IGNORECASE)
+    if m:
+        val = m.group(1).strip()
+        # Stop at known next fields
+        for stop in ["As Found", "As Left", "Cal Date", "Calibration"]:
+            idx = val.find(stop)
+            if idx > 0:
+                val = val[:idx].strip()
+        data["manufacturer"] = val
+    
+    # ── Model Number ──
+    m = re.search(r"Model\s*Number\s*[:=]?\s*(\S+(?:\s+\S+)*?)(?:\s{2,}|\n|$)", text, re.IGNORECASE)
+    if m:
+        val = m.group(1).strip()
+        for stop in ["Cal Date", "As Found", "Crib"]:
+            idx = val.find(stop)
+            if idx > 0:
+                val = val[:idx].strip()
+        data["model_number"] = val
+    
+    # ── Type ──
+    m = re.search(r"Type\s+([A-Z][A-Z\s\d\'\"]+?)(?:\s{2,}|\n|$)", text)
+    if m:
+        val = m.group(1).strip()
+        for stop in ["Crib", "Service", "Temp"]:
+            idx = val.find(stop)
+            if idx > 0:
+                val = val[:idx].strip()
+        data["tool_type"] = val
+    
+    # ── Description ──
+    m = re.search(r"Description\s+(.+?)(?:\s{2,}|\n|$)", text, re.IGNORECASE)
+    if m:
+        data["description"] = m.group(1).strip()
+    
+    # ── Calibration Result ──
+    m = re.search(r"Calibration\s*Result\s*[:=]?\s*(PASS|FAIL|LTD\.?|LIMITED)", text, re.IGNORECASE)
+    if m:
+        data["cal_result"] = m.group(1).strip().upper()
+    
+    # ── Cal. Due Date ──
+    m = re.search(r"Cal\.?\s*Due\s*Date\s*[:=]?\s*(\d{1,2}/\d{1,2}/\d{4})", text, re.IGNORECASE)
+    if m:
+        try:
+            data["cal_due_date"] = datetime.strptime(m.group(1).strip(), "%m/%d/%Y").date()
+        except ValueError:
+            pass
+    
+    # ── Cal Date ──
+    m = re.search(r"Cal\s*Date\s+(\d{1,2}/\d{1,2}/\d{4})", text, re.IGNORECASE)
+    if m:
+        try:
+            data["cal_date"] = datetime.strptime(m.group(1).strip(), "%m/%d/%Y").date()
+        except ValueError:
+            pass
+    
+    # ── As Found / As Left ──
+    m = re.search(r"As\s*Found\s+(PASS|FAIL|LTD\.?|LIMITED)", text, re.IGNORECASE)
+    if m:
+        data["as_found"] = m.group(1).strip().upper()
+    
+    m = re.search(r"As\s*Left\s+(PASS|FAIL|LTD\.?|LIMITED)", text, re.IGNORECASE)
+    if m:
+        data["as_left"] = m.group(1).strip().upper()
+    
+    # ── Service Technician ──
+    m = re.search(r"Service\s*Technician\s+(.+?)(?:\s{2,}|\n|$)", text, re.IGNORECASE)
+    if m:
+        data["service_technician"] = m.group(1).strip()
+    
+    # ── Temp./RH ──
+    m = re.search(r"Temp\.?\s*/?\s*RH\s+(.+?)(?:\n|$)", text, re.IGNORECASE)
+    if m:
+        data["temperature"] = m.group(1).strip()
+    
+    # ── Cal. Interval ──
+    m = re.search(r"Cal\.?\s*Interval\s+(\d+\s+\w+)", text, re.IGNORECASE)
+    if m:
+        data["cal_interval"] = m.group(1).strip()
+    
+    # ── Building / Floor / Room ──
+    m = re.search(r"Building\s*[:=]?\s*(\S+)", text, re.IGNORECASE)
+    if m:
+        data["building"] = m.group(1).strip()
+    m = re.search(r"Floor\s*[:=]?\s*(\S+)", text, re.IGNORECASE)
+    if m:
+        data["floor"] = m.group(1).strip()
+    m = re.search(r"Room\s*[:=]?\s*(\S+)", text, re.IGNORECASE)
+    if m:
+        data["room"] = m.group(1).strip()
+    
+    # ── Test Points ──
+    # Look for the test points table section
+    tp_section = re.search(
+        r"Test\s*Points\s*\n(.*?)(?:Standards?\s*Used|Procedures?\s*Used|This\s*report|Page\s*\d|$)",
+        text, re.DOTALL | re.IGNORECASE
+    )
+    if tp_section:
+        tp_text = tp_section.group(1)
+        # Parse rows - look for lines with numeric data
+        tp_lines = tp_text.strip().split("\n")
+        header_found = False
+        for line in tp_lines:
+            line = line.strip()
+            if not line:
                 continue
+            # Detect header row
+            if "description" in line.lower() and "standard" in line.lower():
+                header_found = True
+                continue
+            if re.match(r"^(Seq|#|\d)", line):
+                header_found = True
+            if header_found:
+                # Try to parse a data row
+                # Format: Seq Description Standard Tolerance- Tolerance+ Units AsFound AsLeft [V]
+                parts = line.split()
+                if len(parts) >= 6:
+                    try:
+                        # Check if first part is a number (sequence)
+                        seq_match = re.match(r"^(\d+)", parts[0])
+                        if seq_match:
+                            tp_row = {
+                                "seq": int(seq_match.group(1)),
+                                "description": "",
+                                "raw": line,
+                            }
+                            # Try to find the description (text before numbers)
+                            desc_match = re.match(r"^\d+\s+([A-Za-z\s]+?)\s+([\d.]+)", line)
+                            if desc_match:
+                                tp_row["description"] = desc_match.group(1).strip()
+                            data["test_points"].append(tp_row)
+                    except (ValueError, IndexError):
+                        pass
+    
+    # ── Standards Used ──
+    std_section = re.search(
+        r"Standards?\s*Used\s*\n(.*?)(?:Procedures?\s*Used|This\s*report|Page\s*\d|$)",
+        text, re.DOTALL | re.IGNORECASE
+    )
+    if std_section:
+        std_text = std_section.group(1)
+        std_lines = std_text.strip().split("\n")
+        for line in std_lines:
+            line = line.strip()
+            if not line or "company" in line.lower():
+                continue
+            if "CAL TEC" in line.upper() or "INC" in line.upper() or re.search(r"\d{2,}", line):
+                parts = re.split(r"\s{2,}", line)
+                if len(parts) >= 2:
+                    data["standards_used"].append({
+                        "company": parts[0].strip(),
+                        "raw": line,
+                    })
+                elif line.strip():
+                    data["standards_used"].append({"raw": line.strip()})
+    
+    return data
 
-            # Check serial number (most reliable)
-            if tool.serial_number and ident_lower in tool.serial_number.lower():
-                if tool.id not in seen_ids:
-                    matches.append((tool, "serial_number", ident))
-                    seen_ids.add(tool.id)
-                    break
 
-            # Check log number
-            if tool.log_number and ident_lower == tool.log_number.lower():
-                if tool.id not in seen_ids:
-                    matches.append((tool, "log_number", ident))
-                    seen_ids.add(tool.id)
-                    break
+def parse_mettler_toledo_report(text):
+    """Parse Mettler-Toledo Comprehensive Test Report (CTR) from extracted text.
+    
+    Returns same dict structure as parse_cal_tec_cert for uniformity.
+    """
+    data = {
+        "cert_number": "",
+        "generated_date": "",
+        "work_order": "",
+        "tool_id": "",
+        "serial_number": "",
+        "manufacturer": "Mettler Toledo",
+        "model_number": "",
+        "tool_type": "",
+        "description": "",
+        "cal_result": "",
+        "cal_due_date": None,
+        "cal_date": None,
+        "as_found": "",
+        "as_left": "",
+        "crib_bin": "",
+        "service_technician": "",
+        "temperature": "",
+        "cal_interval": "",
+        "test_points": [],
+        "standards_used": [],
+        "procedures_used": [],
+        "building": "",
+        "floor": "",
+        "room": "",
+    }
+    
+    if not text:
+        return data
+    
+    # Report ID
+    m = re.search(r"Report\s*ID\s*[:=]?\s*([A-Za-z0-9\-]+)", text, re.IGNORECASE)
+    if m:
+        data["cert_number"] = m.group(1).strip()
+    
+    # Serial No
+    m = re.search(r"Serial\s*No\.?\s*[:=]?\s*([^\n]+)", text, re.IGNORECASE)
+    if m:
+        data["serial_number"] = m.group(1).strip()
+    
+    # Model
+    m = re.search(r"Model\s*[:=]?\s*([^\n]+)", text, re.IGNORECASE)
+    if m:
+        data["model_number"] = m.group(1).strip()
+    
+    # Instrument Type
+    m = re.search(r"Instrument\s*Type\s*[:=]?\s*([^\n]+)", text, re.IGNORECASE)
+    if m:
+        data["tool_type"] = m.group(1).strip()
+    
+    return data
 
-            # Check sticker ID
-            if tool.sticker_id and ident_lower in tool.sticker_id.lower():
-                if tool.id not in seen_ids:
-                    matches.append((tool, "sticker_id", ident))
-                    seen_ids.add(tool.id)
-                    break
 
-            # Check model number
-            if tool.model_number and len(ident_lower) >= 4 and ident_lower in tool.model_number.lower():
-                if tool.id not in seen_ids:
-                    matches.append((tool, "model_number", ident))
-                    seen_ids.add(tool.id)
-                    break
+def determine_cert_result(cal_result_str):
+    """Convert certificate result string to our standard result code."""
+    if not cal_result_str:
+        return "pass"
+    upper = cal_result_str.upper().strip()
+    if upper in ("PASS", "PASSED"):
+        return "pass"
+    elif upper in ("FAIL", "FAILED"):
+        return "fail"
+    elif upper.startswith("LTD") or upper.startswith("LIMITED"):
+        return "limited"
+    elif "ADJUST" in upper:
+        return "adjusted"
+    return "pass"
 
-    return matches
+
+def determine_schedule_from_interval(interval_str):
+    """Convert Cal Tec Labs interval string like '6 MONTHS' to schedule code."""
+    if not interval_str:
+        return "annual"
+    lower = interval_str.strip().lower()
+    if "month" in lower:
+        m = re.search(r"(\d+)", lower)
+        if m:
+            months = int(m.group(1))
+            if months <= 1:
+                return "monthly"
+            elif months <= 3:
+                return "quarterly"
+            elif months <= 6:
+                return "semiannual"
+            elif months <= 12:
+                return "annual"
+            elif months <= 24:
+                return "biennial"
+    if "year" in lower:
+        m = re.search(r"(\d+)", lower)
+        if m:
+            years = int(m.group(1))
+            if years <= 1:
+                return "annual"
+            elif years <= 2:
+                return "biennial"
+    return "semiannual"  # Default for Cal Tec Labs (6 months is common)
 
 
-# ── Bulk PDF Upload ─────────────────────────────────────────────────────────
+def match_cert_to_tool(cert_data):
+    """Try to match parsed certificate data to an existing tool.
+    
+    Matching priority:
+    1. Serial number (exact match)
+    2. Tool I.D. number (exact match)
+    3. Serial number (partial/contains match)
+    4. Tool I.D. (partial match)
+    5. Combination of manufacturer + model + type
+    
+    Returns (tool, match_method) or (None, None).
+    """
+    cert_serial = (cert_data.get("serial_number") or "").strip()
+    cert_tool_id = (cert_data.get("tool_id") or "").strip()
+    cert_model = (cert_data.get("model_number") or "").strip()
+    cert_manufacturer = (cert_data.get("manufacturer") or "").strip()
+    cert_description = (cert_data.get("description") or "").strip()
+    
+    # 1. Exact serial match
+    if cert_serial:
+        tool = Tool.query.filter(
+            db.func.lower(Tool.serial_number) == cert_serial.lower()
+        ).first()
+        if tool:
+            return tool, f"serial_number={cert_serial}"
+    
+    # 2. Exact tool I.D. match
+    if cert_tool_id:
+        tool = Tool.query.filter(
+            db.func.lower(Tool.tool_id_number) == cert_tool_id.lower()
+        ).first()
+        if tool:
+            return tool, f"tool_id={cert_tool_id}"
+    
+    # 3. Partial serial match
+    if cert_serial and len(cert_serial) >= 4:
+        tool = Tool.query.filter(
+            Tool.serial_number.ilike(f"%{cert_serial}%")
+        ).first()
+        if tool:
+            return tool, f"serial_contains={cert_serial}"
+    
+    # 4. Partial tool I.D. match
+    if cert_tool_id and len(cert_tool_id) >= 4:
+        tool = Tool.query.filter(
+            Tool.tool_id_number.ilike(f"%{cert_tool_id}%")
+        ).first()
+        if tool:
+            return tool, f"tool_id_contains={cert_tool_id}"
+    
+    # 5. Sticker ID match against cert tool_id
+    if cert_tool_id:
+        tool = Tool.query.filter(
+            db.func.lower(Tool.sticker_id) == cert_tool_id.lower()
+        ).first()
+        if tool:
+            return tool, f"sticker_id={cert_tool_id}"
+    
+    # 6. Log number match against cert tool_id
+    if cert_tool_id:
+        tool = Tool.query.filter(
+            db.func.lower(Tool.log_number) == cert_tool_id.lower()
+        ).first()
+        if tool:
+            return tool, f"log_number={cert_tool_id}"
+    
+    return None, None
+
+
+# ── Bulk PDF Upload (single PDF with multiple certificates) ─────────────────
 
 @app.route("/bulk-upload", methods=["GET", "POST"])
 def bulk_upload():
@@ -738,111 +966,203 @@ def bulk_upload():
             flash("No files selected.", "danger")
             return redirect(url_for("bulk_upload"))
 
-        results = []
+        all_results = []
+
         for f in files:
             if not f.filename:
                 continue
             if not allowed_file(f.filename):
-                results.append({
+                all_results.append({
                     "filename": f.filename,
                     "status": "skipped",
                     "reason": "File type not allowed",
-                    "matches": [],
+                    "certs": [],
                 })
                 continue
 
-            # Save the file
             stored, original = save_upload(f)
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], stored)
 
-            # Extract text if PDF
-            pdf_text = ""
-            if original.lower().endswith(".pdf"):
-                filepath = os.path.join(app.config["UPLOAD_FOLDER"], stored)
-                pdf_text = extract_pdf_text(filepath)
+            if not original.lower().endswith(".pdf"):
+                all_results.append({
+                    "filename": original,
+                    "stored": stored,
+                    "status": "skipped",
+                    "reason": "Not a PDF file",
+                    "certs": [],
+                })
+                continue
 
-            # Extract identifiers from text + filename
-            identifiers = extract_identifiers(pdf_text, original)
+            # Split the PDF into individual certificates
+            cert_ranges = split_pdf_into_certificates(filepath)
 
-            # Try matching
-            tool_matches = match_pdf_to_tools(identifiers)
-
-            # Classify the document
-            doc_type = classify_pdf(pdf_text, original) if pdf_text else "cert"
+            if not cert_ranges:
+                all_results.append({
+                    "filename": original,
+                    "stored": stored,
+                    "status": "skipped",
+                    "reason": "No certificates detected in PDF",
+                    "certs": [],
+                })
+                continue
 
             file_result = {
                 "filename": original,
                 "stored": stored,
-                "status": "matched" if tool_matches else "unmatched",
-                "doc_type": doc_type,
-                "matches": [],
-                "identifiers": list(identifiers)[:20],  # cap for display
+                "status": "processed",
+                "total_certs": len(cert_ranges),
+                "certs": [],
             }
 
-            if tool_matches:
-                # Auto-link to best match (first = highest confidence)
-                for tool, field, value in tool_matches:
-                    # Find most recent calibration record for this tool
-                    latest_cal = CalibrationRecord.query.filter_by(tool_id=tool.id)\
-                        .order_by(CalibrationRecord.calibration_date.desc()).first()
+            doc = fitz.open(filepath)
 
-                    if doc_type == "report":
-                        # Create a TestReport entry and link to the calibration record
-                        meta = extract_report_metadata(pdf_text, original)
-                        report = TestReport(
-                            title=meta["title"],
-                            report_number=meta["report_number"],
-                            report_date=meta["report_date"],
-                            source_company=meta["source_company"],
-                            file_path=stored,
-                            original_filename=original,
-                            notes=f"Auto-imported via {field}: {value}",
-                        )
-                        db.session.add(report)
-                        db.session.flush()
-                        # Link calibration record to this report
-                        if latest_cal and not latest_cal.test_report_id:
-                            latest_cal.test_report_id = report.id
-                        attachment = FileAttachment(
-                            tool_id=tool.id,
-                            calibration_record_id=latest_cal.id if latest_cal else None,
-                            filename=stored,
-                            original_filename=original,
-                            file_type="report",
-                            notes=f"Test report - auto-linked via {field}: {value}",
-                        )
-                    else:
-                        attachment = FileAttachment(
-                            tool_id=tool.id,
-                            calibration_record_id=latest_cal.id if latest_cal else None,
-                            filename=stored,
-                            original_filename=original,
-                            file_type="cert",
-                            notes=f"Certificate - auto-linked via {field}: {value}",
-                        )
+            for cert_idx, (start_page, end_page) in enumerate(cert_ranges):
+                # Extract text from this certificate's pages
+                cert_text = ""
+                for pg in range(start_page, end_page + 1):
+                    cert_text += extract_page_text(doc, pg) + "\n"
+
+                # Determine document type and parse accordingly
+                lower_text = cert_text.lower()
+                is_mettler = "mettler" in lower_text and "comprehensive test report" in lower_text
+                
+                if is_mettler:
+                    cert_data = parse_mettler_toledo_report(cert_text)
+                else:
+                    cert_data = parse_cal_tec_cert(cert_text)
+
+                # Try to match to an existing tool
+                tool, match_method = match_cert_to_tool(cert_data)
+
+                # Extract this certificate's pages as a separate PDF
+                cert_pdf_bytes = extract_cert_pages_as_pdf(filepath, start_page, end_page)
+                cert_filename = f"cert_{cert_idx+1}_{original}"
+                cert_stored, cert_original = save_bytes(cert_pdf_bytes, cert_filename)
+
+                cert_result = {
+                    "index": cert_idx + 1,
+                    "pages": f"{start_page+1}-{end_page+1}",
+                    "cert_number": cert_data.get("cert_number", ""),
+                    "tool_id": cert_data.get("tool_id", ""),
+                    "serial": cert_data.get("serial_number", ""),
+                    "description": cert_data.get("description", ""),
+                    "manufacturer": cert_data.get("manufacturer", ""),
+                    "model": cert_data.get("model_number", ""),
+                    "cal_result": cert_data.get("cal_result", ""),
+                    "cal_date": str(cert_data.get("cal_date", "")) if cert_data.get("cal_date") else "",
+                    "due_date": str(cert_data.get("cal_due_date", "")) if cert_data.get("cal_due_date") else "",
+                    "technician": cert_data.get("service_technician", ""),
+                    "stored": cert_stored,
+                    "original": cert_original,
+                    "match_method": match_method or "",
+                    "matched": tool is not None,
+                    "tool_name": "",
+                    "tool_log": "",
+                    "tool_db_id": None,
+                    "action": "",
+                }
+
+                if tool:
+                    cert_result["tool_name"] = tool.name
+                    cert_result["tool_log"] = tool.log_number
+                    cert_result["tool_db_id"] = tool.id
+                    cert_result["action"] = "linked"
+
+                    # Create calibration record
+                    cal_date = cert_data.get("cal_date") or date.today()
+                    result_code = determine_cert_result(cert_data.get("cal_result", ""))
+                    
+                    record = CalibrationRecord(
+                        tool_id=tool.id,
+                        calibration_date=cal_date,
+                        due_date=cert_data.get("cal_due_date"),
+                        performed_by=cert_data.get("service_technician", ""),
+                        calibration_company=cert_data.get("manufacturer", "Cal Tec Labs") if is_mettler else "Cal Tec Labs",
+                        certificate_number=cert_data.get("cert_number", ""),
+                        result=result_code,
+                        as_found=cert_data.get("as_found", ""),
+                        as_left=cert_data.get("as_left", ""),
+                        source_company="Cal Tec Labs",
+                        temperature=cert_data.get("temperature", ""),
+                        cal_interval=cert_data.get("cal_interval", ""),
+                        cert_tool_id=cert_data.get("tool_id", ""),
+                        cert_serial=cert_data.get("serial_number", ""),
+                        cert_model=cert_data.get("model_number", ""),
+                        cert_description=cert_data.get("description", ""),
+                        test_points=json.dumps(cert_data.get("test_points", [])),
+                        standards_used=json.dumps(cert_data.get("standards_used", [])),
+                        notes=f"Auto-imported from bulk PDF. Matched via {match_method}.",
+                    )
+                    if is_mettler:
+                        record.report_number = cert_data.get("cert_number", "")
+                        record.calibration_company = "Mettler Toledo"
+                        record.source_company = "Mettler Toledo"
+
+                    db.session.add(record)
+                    db.session.flush()
+
+                    # Attach the cert PDF
+                    attachment = FileAttachment(
+                        tool_id=tool.id,
+                        calibration_record_id=record.id,
+                        filename=cert_stored,
+                        original_filename=cert_original,
+                        file_type="cert",
+                        notes=f"Certificate {cert_data.get('cert_number', '')} - auto-imported",
+                    )
                     db.session.add(attachment)
-                    file_result["matches"].append({
-                        "tool_id": tool.id,
-                        "tool_name": tool.name,
-                        "serial_number": tool.serial_number,
-                        "log_number": tool.log_number,
-                        "match_field": field,
-                        "match_value": value,
-                    })
 
-            results.append(file_result)
+                    # Update tool calibration dates
+                    if not tool.last_calibration_date or cal_date > tool.last_calibration_date:
+                        tool.last_calibration_date = cal_date
+                        if cert_data.get("cal_due_date"):
+                            tool.next_calibration_date = cert_data["cal_due_date"]
+                        else:
+                            tool.recalculate_next_date()
+                    
+                    # Update tool info if missing
+                    if cert_data.get("tool_id") and not tool.tool_id_number:
+                        tool.tool_id_number = cert_data["tool_id"]
+                    if cert_data.get("serial_number") and not tool.serial_number:
+                        tool.serial_number = cert_data["serial_number"]
+                    if cert_data.get("manufacturer") and not tool.manufacturer:
+                        tool.manufacturer = cert_data["manufacturer"]
+                    if cert_data.get("model_number") and not tool.model_number:
+                        tool.model_number = cert_data["model_number"]
+                    if cert_data.get("description") and not tool.description:
+                        tool.description = cert_data["description"]
+                    
+                    # Update schedule from cert interval
+                    if cert_data.get("cal_interval"):
+                        new_schedule = determine_schedule_from_interval(cert_data["cal_interval"])
+                        tool.schedule = new_schedule
+                    
+                    if result_code == "fail":
+                        tool.status = "out_of_cal"
+                    else:
+                        tool.refresh_status()
+                else:
+                    cert_result["action"] = "unmatched"
+
+                file_result["certs"].append(cert_result)
+
+            doc.close()
+            all_results.append(file_result)
 
         db.session.commit()
 
-        matched = sum(1 for r in results if r["status"] == "matched")
-        unmatched = sum(1 for r in results if r["status"] == "unmatched")
-        skipped = sum(1 for r in results if r["status"] == "skipped")
-
+        # Count stats
+        total_certs = sum(len(r.get("certs", [])) for r in all_results)
+        matched = sum(1 for r in all_results for c in r.get("certs", []) if c.get("matched"))
+        unmatched = sum(1 for r in all_results for c in r.get("certs", []) if not c.get("matched"))
+        
         flash(
-            f"Processed {len(results)} files: {matched} matched, {unmatched} unmatched, {skipped} skipped.",
+            f"Processed {len(all_results)} PDF(s) containing {total_certs} certificate(s): "
+            f"{matched} matched & imported, {unmatched} unmatched.",
             "success" if matched > 0 else "warning",
         )
 
-        return render_template("bulk_upload.html", results=results, processed=True,
+        return render_template("bulk_upload.html", results=all_results, processed=True,
                                all_tools=Tool.query.order_by(Tool.log_number).all())
 
     return render_template("bulk_upload.html", results=[], processed=False)
@@ -850,30 +1170,105 @@ def bulk_upload():
 
 @app.route("/bulk-upload/link", methods=["POST"])
 def bulk_upload_link():
-    """Manually link an unmatched file to a tool."""
+    """Manually link an unmatched certificate to a tool and create calibration record."""
     stored = request.form.get("stored_filename")
     original = request.form.get("original_filename")
     tool_id = request.form.get("tool_id")
+    create_new = request.form.get("create_new_tool")
 
-    if not stored or not tool_id:
-        flash("Missing file or tool selection.", "danger")
+    if not stored:
+        flash("Missing file information.", "danger")
         return redirect(url_for("bulk_upload"))
 
-    tool = Tool.query.get_or_404(int(tool_id))
-    latest_cal = CalibrationRecord.query.filter_by(tool_id=tool.id)\
-        .order_by(CalibrationRecord.calibration_date.desc()).first()
+    # Read back the cert PDF to parse it
+    filepath = os.path.join(app.config["UPLOAD_FOLDER"], stored)
+    pdf_text = extract_pdf_text(filepath) if os.path.exists(filepath) else ""
+    cert_data = parse_cal_tec_cert(pdf_text) if pdf_text else {}
+
+    if create_new == "1":
+        # Create a new tool from the certificate data
+        log_number = f"CERT-{cert_data.get('tool_id', uuid.uuid4().hex[:6])}"
+        # Ensure unique log number
+        suffix = 0
+        candidate = log_number
+        while Tool.query.filter(Tool.log_number == candidate).first():
+            suffix += 1
+            candidate = f"{log_number}-{suffix}"
+        log_number = candidate
+
+        tool = Tool(
+            name=cert_data.get("description") or cert_data.get("tool_type") or "Unknown Tool",
+            description=cert_data.get("description", ""),
+            tool_type=cert_data.get("tool_type", ""),
+            manufacturer=cert_data.get("manufacturer", ""),
+            model_number=cert_data.get("model_number", ""),
+            serial_number=cert_data.get("serial_number", ""),
+            tool_id_number=cert_data.get("tool_id", ""),
+            log_number=log_number,
+            schedule=determine_schedule_from_interval(cert_data.get("cal_interval", "")),
+        )
+        db.session.add(tool)
+        db.session.flush()
+        flash(f"Created new tool '{tool.name}' (Log: {tool.log_number}).", "success")
+    elif tool_id:
+        tool = Tool.query.get_or_404(int(tool_id))
+    else:
+        flash("Select a tool or choose to create a new one.", "danger")
+        return redirect(url_for("bulk_upload"))
+
+    # Create calibration record
+    cal_date = cert_data.get("cal_date") or date.today()
+    result_code = determine_cert_result(cert_data.get("cal_result", ""))
+    
+    record = CalibrationRecord(
+        tool_id=tool.id,
+        calibration_date=cal_date,
+        due_date=cert_data.get("cal_due_date"),
+        performed_by=cert_data.get("service_technician", ""),
+        calibration_company="Cal Tec Labs",
+        certificate_number=cert_data.get("cert_number", ""),
+        result=result_code,
+        as_found=cert_data.get("as_found", ""),
+        as_left=cert_data.get("as_left", ""),
+        source_company="Cal Tec Labs",
+        temperature=cert_data.get("temperature", ""),
+        cal_interval=cert_data.get("cal_interval", ""),
+        cert_tool_id=cert_data.get("tool_id", ""),
+        cert_serial=cert_data.get("serial_number", ""),
+        cert_model=cert_data.get("model_number", ""),
+        cert_description=cert_data.get("description", ""),
+        test_points=json.dumps(cert_data.get("test_points", [])),
+        standards_used=json.dumps(cert_data.get("standards_used", [])),
+        notes="Manually linked from bulk upload.",
+    )
+    db.session.add(record)
+    db.session.flush()
 
     attachment = FileAttachment(
         tool_id=tool.id,
-        calibration_record_id=latest_cal.id if latest_cal else None,
+        calibration_record_id=record.id,
         filename=stored,
         original_filename=original or stored,
         file_type="cert",
-        notes="Manually linked via bulk upload",
+        notes=f"Certificate {cert_data.get('cert_number', '')} - manually linked",
     )
     db.session.add(attachment)
+
+    # Update tool dates
+    if not tool.last_calibration_date or cal_date > tool.last_calibration_date:
+        tool.last_calibration_date = cal_date
+        if cert_data.get("cal_due_date"):
+            tool.next_calibration_date = cert_data["cal_due_date"]
+        else:
+            tool.recalculate_next_date()
+    
+    if result_code == "fail":
+        tool.status = "out_of_cal"
+    else:
+        tool.refresh_status()
+
     db.session.commit()
-    flash(f"File linked to '{tool.name}'.", "success")
+    flash(f"Certificate linked to '{tool.name}' with calibration record created.", "success")
     return redirect(url_for("bulk_upload"))
 
 
@@ -891,9 +1286,21 @@ def certificates():
     return render_template("certificates.html", certs=certs)
 
 
+# ── Calibration Records Browser ────────────────────────────────────────────
+
+@app.route("/calibrations")
+def calibration_list():
+    """Browse all calibration records across all tools."""
+    records = (
+        CalibrationRecord.query
+        .order_by(CalibrationRecord.calibration_date.desc())
+        .all()
+    )
+    return render_template("calibration_list.html", records=records)
+
+
 # ── CSV Import ──────────────────────────────────────────────────────────────
 
-# Known column header names from the AllClad QC-FM-065 spreadsheet
 EXPECTED_HEADERS = {"dept", "manufacturer", "type/model", "asset / serial no."}
 
 SCHEDULE_MAP = {
@@ -915,14 +1322,12 @@ SCHEDULE_MAP = {
 
 
 def parse_schedule(raw):
-    """Convert a raw schedule string from the CSV to a model schedule value."""
     if not raw:
         return "annual"
     cleaned = raw.strip().lower()
     for key, val in SCHEDULE_MAP.items():
         if key in cleaned:
             return val
-    # Check for patterns like "5/years/2026" or "5 Years"
     m = re.match(r"(\d+)\s*/?\s*years?", cleaned)
     if m:
         n = int(m.group(1))
@@ -930,14 +1335,13 @@ def parse_schedule(raw):
             return "annual"
         if n == 2:
             return "biennial"
-        return "custom"  # will set custom_interval_days below
+        return "custom"
     if "year" in cleaned:
         return "annual"
     return "annual"
 
 
 def parse_custom_days(raw):
-    """If the schedule is a multi-year custom interval, return the number of days."""
     if not raw:
         return None
     m = re.match(r"(\d+)\s*/?\s*years?", raw.strip().lower())
@@ -949,25 +1353,20 @@ def parse_custom_days(raw):
 
 
 def try_parse_date(raw):
-    """Try multiple date formats and return a date object or None."""
     if not raw:
         return None
     raw = raw.strip()
-    # Skip marker values
     if raw.lower() in ("x", "missing", "not checked", ""):
         return None
-    # ISO format: 2024-09-11
     try:
         return date.fromisoformat(raw)
     except (ValueError, TypeError):
         pass
-    # US format: 9/11/24 or 9/11/2024 or 12/14/24
     for fmt in ("%m/%d/%Y", "%m/%d/%y"):
         try:
             return datetime.strptime(raw, fmt).date()
         except (ValueError, TypeError):
             pass
-    # Formats with parentheses like "(9/11/24)"
     paren_match = re.search(r"\((\d{1,2}/\d{1,2}/\d{2,4})\)", raw)
     if paren_match:
         return try_parse_date(paren_match.group(1))
@@ -975,27 +1374,20 @@ def try_parse_date(raw):
 
 
 def find_header_row(lines):
-    """Find the actual header row in the CSV by looking for known column names.
-    The AllClad CSV often has note/comment rows before the real headers.
-    Returns the index of the header row, or 0 if not found.
-    """
     for idx, line in enumerate(lines):
         lower = line.lower()
-        # Check if this line contains the expected column headers
         if "dept" in lower and "manufacturer" in lower and "type/model" in lower:
             return idx
     return 0
 
 
 def make_unique_serial(base_serial, dept, row_num):
-    """Generate a serial number, ensuring it has a value."""
     if base_serial:
         return base_serial
     return f"NOSN-{dept[:3].upper()}-{row_num:04d}-{uuid.uuid4().hex[:6]}"
 
 
 def make_unique_log_number(dept, row_num):
-    """Generate a unique log number that doesn't conflict with existing ones."""
     base = f"CSV-{dept[:3].upper()}-{row_num:04d}"
     candidate = base
     suffix = 0
@@ -1025,14 +1417,12 @@ def csv_import():
                 flash("CSV file is empty.", "danger")
                 return redirect(url_for("csv_import"))
 
-            # ── Find the real header row (skip leading note/comment rows) ──
             header_idx = find_header_row(lines)
             csv_body = "\n".join(lines[header_idx:])
 
             stream = io.StringIO(csv_body)
             reader = csv.DictReader(stream)
 
-            # Normalise header names so lookup is flexible
             if reader.fieldnames:
                 reader.fieldnames = [h.strip() for h in reader.fieldnames]
 
@@ -1043,15 +1433,13 @@ def csv_import():
 
             for i, row in enumerate(reader, start=header_idx + 2):
                 try:
-                    # ── Read every column, tolerating slight header variations ──
                     dept = (row.get("DEPT") or "").strip()
                     if not dept or dept.lower() == "dept":
-                        continue  # skip sub-header or blank rows
+                        continue
 
                     manufacturer = (row.get("Manufacturer") or "").strip()
                     type_model = (row.get("Type/Model") or "").strip()
 
-                    # Try several possible header names for the serial column
                     asset_serial = ""
                     for key in ("Asset / Serial No.", "Asset / Serial No",
                                 "Asset / Serial No..", "Asset/Serial No."):
@@ -1078,18 +1466,14 @@ def csv_import():
                     cal_date_raw = (row.get("Calibration Date") or "").strip()
                     cert = (row.get("Calibration/Certificate") or "").strip()
 
-                    # ── Skip rows that have no useful data ──
                     if not asset_serial and not type_model and not manufacturer:
                         skipped += 1
                         continue
 
-                    # ── Build serial number ──
                     serial = make_unique_serial(asset_serial, dept, i)
 
-                    # ── Check for existing tool by serial number ──
                     existing = Tool.query.filter(Tool.serial_number == serial).first()
                     if existing:
-                        # Merge any new notes into existing record
                         changed = False
                         if notes and notes not in (existing.comments or ""):
                             existing.comments = (
@@ -1111,14 +1495,10 @@ def csv_import():
                             skipped += 1
                         continue
 
-                    # ── Build tool name from type/model ──
                     name = type_model if type_model else f"{manufacturer} instrument"
-
-                    # ── Schedule ──
                     schedule = parse_schedule(interval)
                     custom_days = parse_custom_days(interval) if schedule == "custom" else None
 
-                    # ── Determine status from Status column + Notes ──
                     notes_lower = notes.lower()
                     cal_marker = cal_date_raw.lower() if cal_date_raw else ""
                     cert_lower = cert.lower() if cert else ""
@@ -1140,11 +1520,8 @@ def csv_import():
                         tool_status = "out_of_cal"
 
                     on_backup = tool_status in ("retired", "not_in_use", "out_of_cal")
-
-                    # ── Generate unique log number ──
                     log_number = make_unique_log_number(dept, i)
 
-                    # ── Clean up certificate / sticker ID ──
                     sticker = ""
                     if cert and cert.lower() not in (
                         "x", "missing", "not checked",
@@ -1153,7 +1530,6 @@ def csv_import():
                     ):
                         sticker = cert
 
-                    # ── Build tool record ──
                     tool = Tool(
                         name=name,
                         tool_type=type_model,
@@ -1170,23 +1546,16 @@ def csv_import():
                         sticker_id=sticker,
                     )
 
-                    # ── Parse dates ──
-                    # In-Service Date
                     svc_in = try_parse_date(in_service)
                     if svc_in:
                         tool.service_in_date = svc_in
 
-                    # Out-of-Service Date
                     svc_out = try_parse_date(out_service)
                     if svc_out:
                         tool.service_out_date = svc_out
 
-                    # The "Calibration Date" column is often just "x" (= was calibrated)
-                    # Try to extract a real date from it, or fall back to dates in Notes
                     cal_date = try_parse_date(cal_date_raw)
                     if not cal_date:
-                        # Try to pull a date from the Notes column
-                        # e.g. "Calibrated (9/11/24) by Rowe Line"
                         cal_date = try_parse_date(notes)
                     if cal_date:
                         tool.last_calibration_date = cal_date

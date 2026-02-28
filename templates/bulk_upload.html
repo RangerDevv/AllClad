@@ -2,7 +2,7 @@
 
 {% block title %}Bulk Upload{% endblock %}
 {% block page_title %}
-  <i class="fas fa-cloud-upload-alt"></i> Bulk Upload
+  <i class="fas fa-cloud-upload-alt"></i> Bulk PDF Upload
 {% endblock %}
 
 {% block content %}
@@ -11,20 +11,21 @@
 {% if not processed %}
 <div class="card">
   <div class="card-header">
-    <h2>Upload Calibration PDFs</h2>
+    <h2>Upload Calibration Certificate PDFs</h2>
   </div>
   <p style="color:var(--c-text-lt);margin-bottom:1.25rem;font-size:.92rem;">
-    Drop multiple PDF files here. The system will automatically detect whether each file is a
-    <strong>calibration certificate</strong> or a <strong>test report</strong>, extract identifiers,
-    match them to tools, and link them correctly.
+    Upload one or more PDF files containing <strong>Cal Tec Labs Certificates of Calibration</strong>.
+    Each PDF can contain <strong>multiple certificates</strong> (typically 2 pages each).
+    The system will automatically split the PDF, parse each certificate, extract all data,
+    and match them to existing tools.
   </p>
 
   <form method="post" enctype="multipart/form-data" id="bulkUploadForm">
     <div class="drop-zone" id="dropZone">
       <i class="fas fa-cloud-upload-alt" style="font-size:2.5rem;opacity:.4;margin-bottom:.75rem;display:block;"></i>
       <p style="font-weight:700;font-size:1.05rem;margin-bottom:.35rem;">Drag & drop PDF files here</p>
-      <p style="color:var(--c-text-lt);font-size:.85rem;">or click to browse</p>
-      <input type="file" name="files" id="fileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" style="display:none;">
+      <p style="color:var(--c-text-lt);font-size:.85rem;">or click to browse • Supports bulk PDFs with multiple certificates</p>
+      <input type="file" name="files" id="fileInput" multiple accept=".pdf" style="display:none;">
     </div>
 
     <div id="fileList" class="file-list" style="display:none;">
@@ -36,7 +37,7 @@
 
     <div class="form-actions">
       <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>
-        <i class="fas fa-upload"></i> Upload & Auto-Match
+        <i class="fas fa-upload"></i> Upload & Auto-Parse Certificates
       </button>
       <button type="button" class="btn btn-secondary" id="clearBtn" style="display:none;">
         <i class="fas fa-times"></i> Clear
@@ -47,13 +48,15 @@
 
 <div class="card">
   <div class="card-header">
-    <h2>How Auto-Matching Works</h2>
+    <h2>How It Works</h2>
   </div>
   <div style="color:var(--c-text-lt);font-size:.9rem;line-height:1.7;">
-    <p><strong>1.</strong> Each PDF is scanned for text — serial numbers, certificate numbers, asset IDs, and model numbers are extracted.</p>
-    <p><strong>2.</strong> The filename is also parsed (e.g. <code style="background:var(--c-surface-2);padding:.15rem .4rem;border-radius:4px;font-size:.82rem;">CTR_1124667-1ME_Floor Scale_2256.pdf</code>).</p>
-    <p><strong>3.</strong> Extracted identifiers are compared against every tool's serial number, log number, sticker ID, and model number.</p>
-    <p><strong>4.</strong> Matched PDFs are automatically attached to the tool. Unmatched files can be manually linked.</p>
+    <p><strong>1.</strong> Upload a PDF containing Cal Tec Labs Certificates of Calibration (can have multiple certificates in one file).</p>
+    <p><strong>2.</strong> The system detects where each certificate starts (by finding "Certificate of Calibration" headers) and splits them.</p>
+    <p><strong>3.</strong> Each certificate is parsed for: Cert #, I.D., Serial Number, Manufacturer, Model, Type, Description, Cal Date, Due Date, Result (PASS/FAIL/LTD), Technician, Test Points, and Standards Used.</p>
+    <p><strong>4.</strong> Tools are matched by serial number, I.D. number, sticker ID, or log number. Matched certificates auto-create calibration records.</p>
+    <p><strong>5.</strong> Unmatched certificates can be manually linked to existing tools or used to create new tool entries.</p>
+    <p style="margin-top:.5rem;"><i class="fas fa-info-circle" style="color:var(--c-accent);"></i> <strong>No serial number?</strong> Tools without serial numbers are matched using the I.D. field from the certificate.</p>
   </div>
 </div>
 {% endif %}
@@ -66,110 +69,150 @@
     <a href="{{ url_for('bulk_upload') }}" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Upload More</a>
   </div>
 
-  {% set matched = results|selectattr('status', 'equalto', 'matched')|list %}
-  {% set unmatched = results|selectattr('status', 'equalto', 'unmatched')|list %}
-  {% set skipped = results|selectattr('status', 'equalto', 'skipped')|list %}
+  {% set all_certs = [] %}
+  {% set matched_certs = [] %}
+  {% set unmatched_certs = [] %}
+  {% for r in results %}
+    {% for c in r.certs %}
+      {% if all_certs.append(c) %}{% endif %}
+      {% if c.matched %}
+        {% if matched_certs.append(c) %}{% endif %}
+      {% else %}
+        {% if unmatched_certs.append(c) %}{% endif %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
 
   <!-- Summary row -->
   <div class="stats-row" style="margin-bottom:1.5rem;">
     <div class="stat-card stat-total">
       <div class="stat-icon"><i class="fas fa-file-pdf"></i></div>
       <div class="stat-number">{{ results|length }}</div>
-      <div class="stat-label">Total Files</div>
+      <div class="stat-label">PDF Files</div>
+    </div>
+    <div class="stat-card stat-total">
+      <div class="stat-icon"><i class="fas fa-certificate"></i></div>
+      <div class="stat-number">{{ all_certs|length }}</div>
+      <div class="stat-label">Certificates Found</div>
     </div>
     <div class="stat-card stat-good">
       <div class="stat-icon"><i class="fas fa-link"></i></div>
-      <div class="stat-number">{{ matched|length }}</div>
+      <div class="stat-number">{{ matched_certs|length }}</div>
       <div class="stat-label">Auto-Matched</div>
     </div>
     <div class="stat-card stat-warn">
       <div class="stat-icon"><i class="fas fa-question-circle"></i></div>
-      <div class="stat-number">{{ unmatched|length }}</div>
+      <div class="stat-number">{{ unmatched_certs|length }}</div>
       <div class="stat-label">Unmatched</div>
-    </div>
-    <div class="stat-card stat-bad">
-      <div class="stat-icon"><i class="fas fa-ban"></i></div>
-      <div class="stat-number">{{ skipped|length }}</div>
-      <div class="stat-label">Skipped</div>
     </div>
   </div>
 
-  <!-- Matched files -->
-  {% if matched %}
+  <!-- Matched certificates -->
+  {% if matched_certs %}
   <h3 style="font-size:.9rem;font-weight:700;color:var(--c-success);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.05em;">
-    <i class="fas fa-check-circle"></i> Auto-Matched
+    <i class="fas fa-check-circle"></i> Auto-Matched & Imported
   </h3>
   <div class="table-wrap" style="margin-bottom:1.5rem;">
     <table>
       <thead>
         <tr>
-          <th>PDF File</th>
-          <th>Type</th>
+          <th>Cert #</th>
+          <th>I.D.</th>
+          <th>Description</th>
+          <th>Result</th>
+          <th>Cal Date</th>
+          <th>Due Date</th>
           <th>Linked Tool</th>
-          <th>Matched On</th>
-          <th>Value</th>
+          <th>Matched Via</th>
           <th>View</th>
         </tr>
       </thead>
       <tbody>
-        {% for r in matched %}
-          {% for m in r.matches %}
-          <tr>
-            <td><i class="fas fa-file-pdf" style="color:#ef4444;margin-right:.35rem;"></i> {{ r.filename }}</td>
-            <td>
-              {% if r.doc_type == 'report' %}
-                <span class="badge badge-active" style="background:var(--c-accent);">Test Report</span>
-              {% else %}
-                <span class="badge badge-active">Certificate</span>
-              {% endif %}
-            </td>
-            <td><strong>{{ m.tool_name }}</strong></td>
-            <td><span class="badge badge-active">{{ m.match_field|replace('_',' ') }}</span></td>
-            <td class="text-sm">{{ m.match_value }}</td>
-            <td><a href="{{ url_for('tool_detail', tool_id=m.tool_id) }}" class="btn btn-secondary btn-sm"><i class="fas fa-eye"></i></a></td>
-          </tr>
-          {% endfor %}
+        {% for c in matched_certs %}
+        <tr>
+          <td><strong>{{ c.cert_number or '—' }}</strong></td>
+          <td>{{ c.tool_id or '—' }}</td>
+          <td>{{ c.description or c.model or '—' }}</td>
+          <td>
+            {% if c.cal_result == 'PASS' %}
+              <span class="badge badge-pass">PASS</span>
+            {% elif c.cal_result == 'FAIL' %}
+              <span class="badge badge-fail">FAIL</span>
+            {% elif 'LTD' in (c.cal_result or '') %}
+              <span class="badge badge-limited">LTD</span>
+            {% else %}
+              <span class="badge badge-active">{{ c.cal_result or '—' }}</span>
+            {% endif %}
+          </td>
+          <td class="text-sm">{{ c.cal_date or '—' }}</td>
+          <td class="text-sm">{{ c.due_date or '—' }}</td>
+          <td><strong>{{ c.tool_name }}</strong><br><span class="text-sm text-muted">{{ c.tool_log }}</span></td>
+          <td><span class="badge badge-active">{{ c.match_method.split('=')[0] | replace('_',' ') }}</span></td>
+          <td><a href="{{ url_for('tool_detail', tool_id=c.tool_db_id) }}" class="btn btn-secondary btn-sm"><i class="fas fa-eye"></i></a></td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% endif %}
 
-  <!-- Unmatched files -->
-  {% if unmatched %}
+  <!-- Unmatched certificates -->
+  {% if unmatched_certs %}
   <h3 style="font-size:.9rem;font-weight:700;color:var(--c-warning);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.05em;">
-    <i class="fas fa-question-circle"></i> Unmatched — Manual Link
+    <i class="fas fa-question-circle"></i> Unmatched — Link or Create Tool
   </h3>
-  {% for r in unmatched %}
+  {% for c in unmatched_certs %}
   <div class="card" style="background:var(--c-bg-subtle);padding:1rem 1.25rem;margin-bottom:.75rem;">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;">
-      <div>
-        <strong><i class="fas fa-file-pdf" style="color:#ef4444;margin-right:.35rem;"></i> {{ r.filename }}</strong>
-        {% if r.identifiers %}
-        <div style="margin-top:.35rem;">
-          <span class="text-sm text-muted">Extracted:</span>
-          {% for ident in r.identifiers[:8] %}
-          <span class="badge badge-backup" style="margin:.1rem;">{{ ident }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
+    <div style="margin-bottom:.75rem;">
+      <strong><i class="fas fa-certificate" style="color:var(--c-warning);margin-right:.35rem;"></i>
+        Cert {{ c.cert_number or '(no cert #)' }}</strong>
+      <span class="text-sm text-muted" style="margin-left:.75rem;">Pages {{ c.pages }}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.35rem .75rem;margin-bottom:.75rem;font-size:.88rem;">
+      <div><strong>I.D.:</strong> {{ c.tool_id or '—' }}</div>
+      <div><strong>Serial:</strong> {{ c.serial or 'None' }}</div>
+      <div><strong>Manufacturer:</strong> {{ c.manufacturer or '—' }}</div>
+      <div><strong>Model:</strong> {{ c.model or '—' }}</div>
+      <div><strong>Description:</strong> {{ c.description or '—' }}</div>
+      <div><strong>Result:</strong>
+        {% if c.cal_result == 'PASS' %}<span class="badge badge-pass">PASS</span>
+        {% elif c.cal_result == 'FAIL' %}<span class="badge badge-fail">FAIL</span>
+        {% elif 'LTD' in (c.cal_result or '') %}<span class="badge badge-limited">LTD</span>
+        {% else %}{{ c.cal_result or '—' }}{% endif %}
       </div>
+      <div><strong>Cal Date:</strong> {{ c.cal_date or '—' }}</div>
+      <div><strong>Due Date:</strong> {{ c.due_date or '—' }}</div>
+      <div><strong>Technician:</strong> {{ c.technician or '—' }}</div>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+      <!-- Link to existing tool -->
       <form method="post" action="{{ url_for('bulk_upload_link') }}" style="display:flex;gap:.5rem;align-items:center;">
-        <input type="hidden" name="stored_filename" value="{{ r.stored }}">
-        <input type="hidden" name="original_filename" value="{{ r.filename }}">
-        <select name="tool_id" class="form-control" style="width:250px;font-size:.85rem;padding:.4rem .6rem;" required>
-          <option value="">Select tool...</option>
+        <input type="hidden" name="stored_filename" value="{{ c.stored }}">
+        <input type="hidden" name="original_filename" value="{{ c.original }}">
+        <select name="tool_id" class="form-control" style="width:280px;font-size:.85rem;padding:.4rem .6rem;">
+          <option value="">Select existing tool...</option>
           {% for tool in all_tools %}
-          <option value="{{ tool.id }}">{{ tool.log_number }} — {{ tool.name }} ({{ tool.serial_number }})</option>
+          <option value="{{ tool.id }}">{{ tool.log_number }} — {{ tool.name }} ({{ tool.serial_number or tool.tool_id_number or 'no S/N' }})</option>
           {% endfor %}
         </select>
         <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-link"></i> Link</button>
       </form>
+      <!-- Or create new tool -->
+      <form method="post" action="{{ url_for('bulk_upload_link') }}" style="display:inline;">
+        <input type="hidden" name="stored_filename" value="{{ c.stored }}">
+        <input type="hidden" name="original_filename" value="{{ c.original }}">
+        <input type="hidden" name="create_new_tool" value="1">
+        <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Create New Tool</button>
+      </form>
+      <!-- View PDF -->
+      <a href="{{ url_for('uploaded_file', filename=c.stored) }}" target="_blank" class="btn btn-outline btn-sm"><i class="fas fa-file-pdf"></i> View PDF</a>
     </div>
   </div>
   {% endfor %}
   {% endif %}
 
+  <!-- Skipped files -->
+  {% set skipped = results|selectattr('status', 'equalto', 'skipped')|list %}
   {% if skipped %}
   <h3 style="font-size:.9rem;font-weight:700;color:var(--c-danger);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.05em;">
     <i class="fas fa-ban"></i> Skipped
@@ -195,56 +238,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (!dropZone) return;
 
-  // Click to browse
   dropZone.addEventListener('click', () => fileInput.click());
 
-  // Drag events
-  ['dragenter','dragover'].forEach(evt => {
-    dropZone.addEventListener(evt, e => {
-      e.preventDefault();
-      dropZone.classList.add('drag-over');
-    });
+  ['dragenter', 'dragover'].forEach(e => {
+    dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('drag-over'); });
   });
-  ['dragleave','drop'].forEach(evt => {
-    dropZone.addEventListener(evt, e => {
-      e.preventDefault();
-      dropZone.classList.remove('drag-over');
-    });
+  ['dragleave', 'drop'].forEach(e => {
+    dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('drag-over'); });
   });
 
-  dropZone.addEventListener('drop', e => {
-    fileInput.files = e.dataTransfer.files;
-    updateFileList();
+  dropZone.addEventListener('drop', ev => {
+    fileInput.files = ev.dataTransfer.files;
+    showFiles(fileInput.files);
   });
 
-  fileInput.addEventListener('change', updateFileList);
+  fileInput.addEventListener('change', () => showFiles(fileInput.files));
+
+  function showFiles(files) {
+    if (files.length === 0) return;
+    fileListItems.innerHTML = '';
+    let totalSize = 0;
+    for (const f of files) {
+      totalSize += f.size;
+      const li = document.createElement('li');
+      li.innerHTML = `<i class="fas fa-file-pdf" style="color:#ef4444;margin-right:.35rem;"></i> ${f.name} <span class="text-sm text-muted">(${(f.size/1024/1024).toFixed(1)} MB)</span>`;
+      fileListItems.appendChild(li);
+    }
+    fileList.style.display = '';
+    uploadBtn.disabled = false;
+    clearBtn.style.display = '';
+  }
 
   clearBtn.addEventListener('click', () => {
     fileInput.value = '';
     fileList.style.display = 'none';
+    fileListItems.innerHTML = '';
     uploadBtn.disabled = true;
     clearBtn.style.display = 'none';
   });
 
-  function updateFileList() {
-    const files = fileInput.files;
-    if (files.length === 0) return;
-
-    fileListItems.innerHTML = '';
-    for (const f of files) {
-      const li = document.createElement('li');
-      li.innerHTML = `<i class="fas fa-file-pdf" style="color:#ef4444;margin-right:.4rem;"></i> ${f.name} <span class="text-muted text-sm">(${(f.size/1024).toFixed(0)} KB)</span>`;
-      fileListItems.appendChild(li);
-    }
-    fileList.style.display = 'block';
-    uploadBtn.disabled = false;
-    clearBtn.style.display = 'inline-flex';
-  }
-
   // Show loading state on submit
   document.getElementById('bulkUploadForm').addEventListener('submit', () => {
     uploadBtn.disabled = true;
-    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Parsing certificates...';
   });
 });
 </script>

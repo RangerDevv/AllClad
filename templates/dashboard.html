@@ -52,7 +52,7 @@
           <tr>
             <td><strong>{{ t.log_number }}</strong></td>
             <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
-            <td class="text-sm">{{ t.serial_number }}</td>
+            <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
             <td class="text-sm">{{ t.location }}</td>
             <td class="text-sm">{{ t.owner or '—' }}</td>
             <td class="text-sm text-danger"><strong>{{ t.next_calibration_date or '—' }}</strong></td>
@@ -100,7 +100,7 @@
           <tr>
             <td><strong>{{ t.log_number }}</strong></td>
             <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
-            <td class="text-sm">{{ t.serial_number }}</td>
+            <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
             <td class="text-sm">{{ t.location }}</td>
             <td class="text-sm">{{ t.owner or '—' }}</td>
             <td class="text-sm text-warning"><strong>{{ t.next_calibration_date or '—' }}</strong></td>
@@ -245,9 +245,9 @@
         <tr>
           <td><strong>{{ t.log_number }}</strong></td>
           <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
-          <td class="text-sm">{{ t.serial_number }}</td>
-          <td class="text-sm">{{ t.location }}</td>
-          <td class="text-sm">{{ t.owner }}</td>
+          <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
+          <td class="text-sm">{{ t.location or '—' }}</td>
+          <td class="text-sm">{{ t.owner or '—' }}</td>
           <td class="text-sm">{{ t.schedule | replace('_',' ') | title }}</td>
           <td class="text-sm">{{ t.last_calibration_date or '—' }}</td>
           <td class="text-sm {% if t.days_until_due is not none and t.days_until_due < 0 %}text-danger{% elif t.days_until_due is not none and t.days_until_due <= 30 %}text-warning{% endif %}">

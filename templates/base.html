@@ -39,8 +39,8 @@
       <li><a href="{{ url_for('certificates') }}" class="{% if request.endpoint == 'certificates' %}active{% endif %}">
         <i class="fas fa-certificate"></i><span>Certificates</span>
       </a></li>
-      <li><a href="{{ url_for('test_reports') }}" class="{% if request.endpoint in ('test_reports','report_new','report_detail') %}active{% endif %}">
-        <i class="fas fa-file-alt"></i><span>Test Reports</span>
+      <li><a href="{{ url_for('calibration_list') }}" class="{% if request.endpoint == 'calibration_list' %}active{% endif %}">
+        <i class="fas fa-clipboard-check"></i><span>Calibration Records</span>
       </a></li>
       <li><a href="{{ url_for('backup_list') }}" class="{% if request.endpoint == 'backup_list' %}active{% endif %}">
         <i class="fas fa-archive"></i><span>Backup List</span>

@@ -57,15 +57,6 @@
 
   <div class="form-row">
     <div class="form-group">
-      <label for="test_report_id">Link to Test Report</label>
-      <select name="test_report_id" id="test_report_id" class="form-control">
-        <option value="">— None —</option>
-        {% for tr in test_reports %}
-        <option value="{{ tr.id }}">{{ tr.report_number }} – {{ tr.title }} ({{ tr.report_date }})</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-group">
       <label for="certificate_file">Upload Certificate / Report File</label>
       <input type="file" name="certificate_file" id="certificate_file" class="form-control"
              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx">
