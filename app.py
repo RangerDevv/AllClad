@@ -890,12 +890,13 @@ def determine_schedule_from_interval(interval_str):
 def match_cert_to_tool(cert_data):
     """Try to match parsed certificate data to an existing tool.
     
-    Matching priority:
-    1. Serial number (exact match)
-    2. Tool I.D. number (exact match)
-    3. Serial number (partial/contains match)
-    4. Tool I.D. (partial match)
-    5. Combination of manufacturer + model + type
+    Matching priority (Equipment I.D. first — it's the primary identifier):
+    1. Equipment I.D. (exact match against tool_id_number)
+    2. Equipment I.D. (exact match against sticker_id)
+    3. Equipment I.D. (exact match against log_number)
+    4. Serial number (exact match) — serial is a separate field
+    5. Equipment I.D. (partial/contains match)
+    6. Serial number (partial/contains match)
     
     Returns (tool, match_method) or (None, None).
     """
@@ -905,39 +906,15 @@ def match_cert_to_tool(cert_data):
     cert_manufacturer = (cert_data.get("manufacturer") or "").strip()
     cert_description = (cert_data.get("description") or "").strip()
     
-    # 1. Exact serial match
-    if cert_serial:
-        tool = Tool.query.filter(
-            db.func.lower(Tool.serial_number) == cert_serial.lower()
-        ).first()
-        if tool:
-            return tool, f"serial_number={cert_serial}"
-    
-    # 2. Exact tool I.D. match
+    # 1. Exact Equipment I.D. → tool_id_number
     if cert_tool_id:
         tool = Tool.query.filter(
             db.func.lower(Tool.tool_id_number) == cert_tool_id.lower()
         ).first()
         if tool:
-            return tool, f"tool_id={cert_tool_id}"
+            return tool, f"equipment_id={cert_tool_id}"
     
-    # 3. Partial serial match
-    if cert_serial and len(cert_serial) >= 4:
-        tool = Tool.query.filter(
-            Tool.serial_number.ilike(f"%{cert_serial}%")
-        ).first()
-        if tool:
-            return tool, f"serial_contains={cert_serial}"
-    
-    # 4. Partial tool I.D. match
-    if cert_tool_id and len(cert_tool_id) >= 4:
-        tool = Tool.query.filter(
-            Tool.tool_id_number.ilike(f"%{cert_tool_id}%")
-        ).first()
-        if tool:
-            return tool, f"tool_id_contains={cert_tool_id}"
-    
-    # 5. Sticker ID match against cert tool_id
+    # 2. Equipment I.D. → sticker_id
     if cert_tool_id:
         tool = Tool.query.filter(
             db.func.lower(Tool.sticker_id) == cert_tool_id.lower()
@@ -945,13 +922,37 @@ def match_cert_to_tool(cert_data):
         if tool:
             return tool, f"sticker_id={cert_tool_id}"
     
-    # 6. Log number match against cert tool_id
+    # 3. Equipment I.D. → log_number
     if cert_tool_id:
         tool = Tool.query.filter(
             db.func.lower(Tool.log_number) == cert_tool_id.lower()
         ).first()
         if tool:
             return tool, f"log_number={cert_tool_id}"
+    
+    # 4. Exact serial number match (serial is a separate identifier)
+    if cert_serial:
+        tool = Tool.query.filter(
+            db.func.lower(Tool.serial_number) == cert_serial.lower()
+        ).first()
+        if tool:
+            return tool, f"serial_number={cert_serial}"
+    
+    # 5. Partial Equipment I.D. match
+    if cert_tool_id and len(cert_tool_id) >= 3:
+        tool = Tool.query.filter(
+            Tool.tool_id_number.ilike(f"%{cert_tool_id}%")
+        ).first()
+        if tool:
+            return tool, f"equipment_id_contains={cert_tool_id}"
+    
+    # 6. Partial serial match
+    if cert_serial and len(cert_serial) >= 4:
+        tool = Tool.query.filter(
+            Tool.serial_number.ilike(f"%{cert_serial}%")
+        ).first()
+        if tool:
+            return tool, f"serial_contains={cert_serial}"
     
     return None, None
 
