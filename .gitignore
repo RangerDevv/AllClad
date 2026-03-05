@@ -34,5 +34,8 @@ Thumbs.db
 .env
 .flaskenv
 
+# Backup files
+*.bak
+
 # Logs
 *.log
