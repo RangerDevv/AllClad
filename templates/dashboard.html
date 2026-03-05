@@ -3,7 +3,7 @@
 {% block title %}Dashboard{% endblock %}
 {% block page_title %}
   <i class="fas fa-tachometer-alt"></i> Dashboard
-  <span class="text-muted text-sm" style="margin-left:.75rem;">{{ tools|length }} tool{{ 's' if tools|length != 1 }}</span>
+  <span class="text-muted text-sm" style="margin-left:.75rem;">{{ pagination.total }} tool{{ 's' if pagination.total != 1 }}</span>
 {% endblock %}
 
 {% block topbar_actions %}
@@ -17,7 +17,7 @@
 <!-- ── Greeting Banner ─────────────────────────────────────────── -->
 <div class="greeting-banner">
   <h2>Welcome back, AllClad</h2>
-  <p>{{ tools|length }} tool{{ 's' if tools|length != 1 }} on your radar.
+  <p>{{ pagination.total }} tool{{ 's' if pagination.total != 1 }} on your radar.
     {% if alert_overdue > 0 %}<strong>{{ alert_overdue }} overdue.</strong>{% endif %}
     {% if alert_due_soon > 0 %}<strong>{{ alert_due_soon }} due soon.</strong>{% endif %}
     {% if alert_overdue == 0 and alert_due_soon == 0 %}Everything is looking clean.{% endif %}
@@ -124,7 +124,7 @@
 <div class="stats-row">
   <div class="stat-card stat-total">
     <div class="stat-icon"><i class="fas fa-tools"></i></div>
-    <div class="stat-number">{{ tools|length }}</div>
+    <div class="stat-number">{{ pagination.total }}</div>
     <div class="stat-label">Active Tools</div>
   </div>
   <div class="stat-card stat-good">
@@ -264,6 +264,29 @@
     </table>
   </div>
 </div>
+
+{% if pagination.pages > 1 %}
+<nav class="pagination-nav" style="display:flex;justify-content:center;align-items:center;gap:.5rem;margin-top:1.25rem;flex-wrap:wrap;">
+  {% if pagination.has_prev %}
+  <a href="{{ url_for('dashboard', page=pagination.prev_num, q=q, status=status_filter, schedule=schedule_filter, department=department_filter, retained_by=retained_by_filter, sort=sort, order=order) }}" class="btn btn-secondary btn-sm"><i class="fas fa-chevron-left"></i> Prev</a>
+  {% endif %}
+  {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+    {% if p %}
+      {% if p == pagination.page %}
+        <span class="btn btn-primary btn-sm" style="pointer-events:none;">{{ p }}</span>
+      {% else %}
+        <a href="{{ url_for('dashboard', page=p, q=q, status=status_filter, schedule=schedule_filter, department=department_filter, retained_by=retained_by_filter, sort=sort, order=order) }}" class="btn btn-outline btn-sm">{{ p }}</a>
+      {% endif %}
+    {% else %}
+      <span style="color:var(--c-text-lt);">…</span>
+    {% endif %}
+  {% endfor %}
+  {% if pagination.has_next %}
+  <a href="{{ url_for('dashboard', page=pagination.next_num, q=q, status=status_filter, schedule=schedule_filter, department=department_filter, retained_by=retained_by_filter, sort=sort, order=order) }}" class="btn btn-secondary btn-sm">Next <i class="fas fa-chevron-right"></i></a>
+  {% endif %}
+</nav>
+{% endif %}
+
 {% else %}
 <div class="empty-state">
   <i class="fas fa-tools empty-icon"></i>
