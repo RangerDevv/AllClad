@@ -74,9 +74,10 @@ class Tool(db.Model):
     serial_number = db.Column(db.String(100), default="")       # optional – some tools don't have one
     tool_id_number = db.Column(db.String(100), default="")      # I.D. from Cal Tec Labs certificates
     log_number = db.Column(db.String(100), unique=True, nullable=False)
-    location = db.Column(db.String(200), default="")
-    owner = db.Column(db.String(200), default="")
-    router = db.Column(db.String(200), default="")              # specific to router
+    department = db.Column(db.String(200), default="")          # department (was "location")
+    location = db.Column(db.String(200), default="")            # precise location within the department
+    retained_by = db.Column(db.String(200), default="")         # who retains the tool (was "owner")
+    calibration_performed_by = db.Column(db.String(200), default="")  # company that performs calibration
 
     # Calibration schedule
     schedule = db.Column(db.String(20), default="annual")
@@ -154,8 +155,10 @@ class Tool(db.Model):
             "serial_number": self.serial_number,
             "tool_id_number": self.tool_id_number,
             "log_number": self.log_number,
+            "department": self.department,
             "location": self.location,
-            "owner": self.owner,
+            "retained_by": self.retained_by,
+            "calibration_performed_by": self.calibration_performed_by,
             "status": self.status,
             "schedule": self.schedule,
             "last_calibration_date": str(self.last_calibration_date) if self.last_calibration_date else None,
@@ -177,34 +180,13 @@ class CalibrationRecord(db.Model):
     tool_id = db.Column(db.Integer, db.ForeignKey("tools.id"), nullable=False)
 
     calibration_date = db.Column(db.Date, nullable=False)
-    due_date = db.Column(db.Date, nullable=True)                 # Cal. Due Date from cert
-    performed_by = db.Column(db.String(200), default="")         # Service Technician
     calibration_company = db.Column(db.String(200), default="")  # e.g. Cal Tec Labs
-    certificate_number = db.Column(db.String(100), default="")   # Cert #
+    certificate_number = db.Column(db.String(100), default="")   # Cert # / Report ID
     result = db.Column(db.String(20), default="pass")            # pass / fail / adjusted / limited
-    as_found = db.Column(db.String(50), default="")              # As Found: PASS / FAIL / LTD.
-    as_left = db.Column(db.String(50), default="")               # As Left: PASS / FAIL / LTD.
     notes = db.Column(db.Text, default="")
 
-    # Report metadata (merged from old TestReport concept)
-    report_number = db.Column(db.String(100), default="")        # Report ID / CTR number
-    source_company = db.Column(db.String(200), default="")       # Mettler-Toledo, Cal Tec Labs, etc.
-
-    # Calibration environment
-    temperature = db.Column(db.String(50), default="")           # e.g. "70 F / 40"
-    cal_interval = db.Column(db.String(50), default="")          # e.g. "6 MONTHS"
-
-    # Equipment info from cert (for cross-reference)
-    cert_tool_id = db.Column(db.String(100), default="")         # I.D. on the cert
-    cert_serial = db.Column(db.String(100), default="")          # Serial on the cert
-    cert_model = db.Column(db.String(100), default="")           # Model on the cert
-    cert_description = db.Column(db.String(300), default="")     # Description on the cert
-
-    # Test points data (JSON string)
-    test_points = db.Column(db.Text, default="")                 # JSON array of test point rows
-
-    # Standards used (JSON string)
-    standards_used = db.Column(db.Text, default="")              # JSON array of standards rows
+    # Link to external test report
+    test_report_link = db.Column(db.String(500), default="")
 
     # If it failed, flag investment need
     requires_replacement = db.Column(db.Boolean, default=False)

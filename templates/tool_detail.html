@@ -52,9 +52,10 @@
     <div class="detail-item"><label>Type</label><span>{{ tool.tool_type or '—' }}</span></div>
     <div class="detail-item"><label>Manufacturer</label><span>{{ tool.manufacturer or '—' }}</span></div>
     <div class="detail-item"><label>Model</label><span>{{ tool.model_number or '—' }}</span></div>
+    <div class="detail-item"><label>Department</label><span>{{ tool.department or '—' }}</span></div>
     <div class="detail-item"><label>Location</label><span>{{ tool.location or '—' }}</span></div>
-    <div class="detail-item"><label>Owner</label><span>{{ tool.owner or '—' }}</span></div>
-    <div class="detail-item"><label>Router</label><span>{{ tool.router or '—' }}</span></div>
+    <div class="detail-item"><label>Retained By</label><span>{{ tool.retained_by or '—' }}</span></div>
+    <div class="detail-item"><label>Calibration Performed By</label><span>{{ tool.calibration_performed_by or '—' }}</span></div>
     <div class="detail-item"><label>Schedule</label><span>{{ tool.schedule | replace('_',' ') | title }}{% if tool.schedule == 'custom' and tool.custom_interval_days %} ({{ tool.custom_interval_days }}d){% endif %}</span></div>
     <div class="detail-item"><label>Last Calibration</label><span>{{ tool.last_calibration_date or '—' }}</span></div>
     <div class="detail-item"><label>Next Calibration</label><span class="{% if tool.days_until_due is not none and tool.days_until_due < 0 %}text-danger{% elif tool.days_until_due is not none and tool.days_until_due <= 30 %}text-warning{% endif %}">{{ tool.next_calibration_date or '—' }}</span></div>
@@ -89,34 +90,36 @@
     <table>
       <thead>
         <tr>
-          <th style="width:10%">Cal Date</th>
-          <th style="width:10%">Due Date</th>
-          <th style="width:8%">Result</th>
-          <th style="width:9%">As Found</th>
-          <th style="width:9%">As Left</th>
-          <th style="width:11%">Performed By</th>
-          <th style="width:11%">Company</th>
-          <th style="width:10%">Cert #</th>
-          <th style="width:12%">Certificate</th>
-          <th style="width:10%">Notes</th>
+          <th style="width:12%">Cal Date</th>
+          <th style="width:10%">Result</th>
+          <th style="width:14%">Company</th>
+          <th style="width:12%">Cert #</th>
+          <th style="width:12%">Test Report</th>
+          <th style="width:18%">Certificate</th>
+          <th style="width:22%">Notes</th>
         </tr>
       </thead>
       <tbody>
         {% for cal in calibrations %}
         <tr>
           <td class="text-sm">{{ cal.calibration_date }}</td>
-          <td class="text-sm">{{ cal.due_date or '—' }}</td>
           <td>
             <span class="badge badge-{{ cal.result }}">{{ cal.result | upper }}</span>
             {% if cal.requires_replacement %}
               <br><span class="text-danger text-sm"><i class="fas fa-exclamation-circle"></i> Replace</span>
             {% endif %}
           </td>
-          <td class="text-sm">{{ cal.as_found or '—' }}</td>
-          <td class="text-sm">{{ cal.as_left or '—' }}</td>
-          <td class="text-sm">{{ cal.performed_by or '—' }}</td>
-          <td class="text-sm">{{ cal.calibration_company or cal.source_company or '—' }}</td>
+          <td class="text-sm">{{ cal.calibration_company or '—' }}</td>
           <td class="text-sm">{{ cal.certificate_number or '—' }}</td>
+          <td class="text-sm">
+            {% if cal.test_report_link %}
+              <a href="{{ cal.test_report_link }}" target="_blank" class="btn btn-outline btn-sm" style="white-space:nowrap;">
+                <i class="fas fa-external-link-alt"></i> View
+              </a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
           <td>
             {% set cert_files = cal.certificates.all() %}
             {% if cert_files %}

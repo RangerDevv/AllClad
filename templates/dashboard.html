@@ -40,8 +40,8 @@
             <th>Log #</th>
             <th>Tool Name</th>
             <th>Serial #</th>
-            <th>Location</th>
-            <th>Owner</th>
+            <th>Department</th>
+            <th>Retained By</th>
             <th>Due Date</th>
             <th>Days Overdue</th>
             <th>Actions</th>
@@ -53,8 +53,8 @@
             <td><strong>{{ t.log_number }}</strong></td>
             <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
             <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
-            <td class="text-sm">{{ t.location }}</td>
-            <td class="text-sm">{{ t.owner or '—' }}</td>
+            <td class="text-sm">{{ t.department }}</td>
+            <td class="text-sm">{{ t.retained_by or '—' }}</td>
             <td class="text-sm text-danger"><strong>{{ t.next_calibration_date or '—' }}</strong></td>
             <td class="text-sm text-danger"><strong>{{ (t.days_until_due|abs) if t.days_until_due is not none else '—' }}d</strong></td>
             <td>
@@ -88,8 +88,8 @@
             <th>Log #</th>
             <th>Tool Name</th>
             <th>Serial #</th>
-            <th>Location</th>
-            <th>Owner</th>
+            <th>Department</th>
+            <th>Retained By</th>
             <th>Due Date</th>
             <th>Days Left</th>
             <th>Actions</th>
@@ -101,8 +101,8 @@
             <td><strong>{{ t.log_number }}</strong></td>
             <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
             <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
-            <td class="text-sm">{{ t.location }}</td>
-            <td class="text-sm">{{ t.owner or '—' }}</td>
+            <td class="text-sm">{{ t.department }}</td>
+            <td class="text-sm">{{ t.retained_by or '—' }}</td>
             <td class="text-sm text-warning"><strong>{{ t.next_calibration_date or '—' }}</strong></td>
             <td class="text-sm text-warning"><strong>{{ t.days_until_due if t.days_until_due is not none else '—' }}d</strong></td>
             <td>
@@ -171,29 +171,20 @@
     </select>
   </div>
   <div class="form-group">
-    <label>Location</label>
-    <select name="location" class="form-control" onchange="this.form.submit()">
-      <option value="">All Locations</option>
-      {% for loc in locations %}
-      <option value="{{ loc }}" {{ 'selected' if location_filter == loc }}>{{ loc }}</option>
+    <label>Department</label>
+    <select name="department" class="form-control" onchange="this.form.submit()">
+      <option value="">All Departments</option>
+      {% for dept in departments %}
+      <option value="{{ dept }}" {{ 'selected' if department_filter == dept }}>{{ dept }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="form-group">
-    <label>Owner</label>
-    <select name="owner" class="form-control" onchange="this.form.submit()">
-      <option value="">All Owners</option>
-      {% for own in owners %}
-      <option value="{{ own }}" {{ 'selected' if owner_filter == own }}>{{ own }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="form-group">
-    <label>Router</label>
-    <select name="router" class="form-control" onchange="this.form.submit()">
-      <option value="">All Routers</option>
-      {% for r in routers %}
-      <option value="{{ r }}" {{ 'selected' if router_filter == r }}>{{ r }}</option>
+    <label>Retained By</label>
+    <select name="retained_by" class="form-control" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for rb in retained_bys %}
+      <option value="{{ rb }}" {{ 'selected' if retained_by_filter == rb }}>{{ rb }}</option>
       {% endfor %}
     </select>
   </div>
@@ -201,7 +192,7 @@
     <label>&nbsp;</label>
     <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Filter</button>
   </div>
-  {% if q or status_filter or schedule_filter or location_filter or owner_filter or router_filter %}
+  {% if q or status_filter or schedule_filter or department_filter or retained_by_filter %}
   <div class="form-group" style="flex:0;">
     <label>&nbsp;</label>
     <a href="{{ url_for('dashboard') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Clear</a>
@@ -218,7 +209,7 @@
         <tr>
           {% macro sort_header(col, label) %}
           <th>
-            <a href="{{ url_for('dashboard', q=q, status=status_filter, schedule=schedule_filter, location=location_filter, owner=owner_filter, router=router_filter, sort=col, order='desc' if sort==col and order=='asc' else 'asc') }}" class="sort-link">
+            <a href="{{ url_for('dashboard', q=q, status=status_filter, schedule=schedule_filter, department=department_filter, retained_by=retained_by_filter, sort=col, order='desc' if sort==col and order=='asc' else 'asc') }}" class="sort-link">
               {{ label }}
               {% if sort == col %}
                 <i class="fas fa-sort-{{ 'up' if order=='asc' else 'down' }}"></i>
@@ -231,8 +222,8 @@
           {{ sort_header('log_number', 'Log #') }}
           {{ sort_header('name', 'Tool Name') }}
           {{ sort_header('serial_number', 'Serial #') }}
-          {{ sort_header('location', 'Location') }}
-          {{ sort_header('owner', 'Owner') }}
+          {{ sort_header('department', 'Department') }}
+          {{ sort_header('retained_by', 'Retained By') }}
           {{ sort_header('schedule', 'Schedule') }}
           {{ sort_header('last_calibration_date', 'Last Cal.') }}
           {{ sort_header('next_calibration_date', 'Next Cal.') }}
@@ -246,8 +237,8 @@
           <td><strong>{{ t.log_number }}</strong></td>
           <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
           <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
-          <td class="text-sm">{{ t.location or '—' }}</td>
-          <td class="text-sm">{{ t.owner or '—' }}</td>
+          <td class="text-sm">{{ t.department or '—' }}</td>
+          <td class="text-sm">{{ t.retained_by or '—' }}</td>
           <td class="text-sm">{{ t.schedule | replace('_',' ') | title }}</td>
           <td class="text-sm">{{ t.last_calibration_date or '—' }}</td>
           <td class="text-sm {% if t.days_until_due is not none and t.days_until_due < 0 %}text-danger{% elif t.days_until_due is not none and t.days_until_due <= 30 %}text-warning{% endif %}">

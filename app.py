@@ -100,9 +100,8 @@ def dashboard():
     q = request.args.get("q", "").strip()
     status_filter = request.args.get("status", "")
     schedule_filter = request.args.get("schedule", "")
-    location_filter = request.args.get("location", "")
-    owner_filter = request.args.get("owner", "")
-    router_filter = request.args.get("router", "")
+    department_filter = request.args.get("department", "")
+    retained_by_filter = request.args.get("retained_by", "")
     sort = request.args.get("sort", "next_calibration_date")
     order = request.args.get("order", "asc")
 
@@ -117,22 +116,20 @@ def dashboard():
                 Tool.tool_id_number.ilike(like),
                 Tool.log_number.ilike(like),
                 Tool.sticker_id.ilike(like),
-                Tool.owner.ilike(like),
+                Tool.retained_by.ilike(like),
+                Tool.department.ilike(like),
                 Tool.location.ilike(like),
                 Tool.description.ilike(like),
-                Tool.router.ilike(like),
             )
         )
     if status_filter:
         query = query.filter(Tool.status == status_filter)
     if schedule_filter:
         query = query.filter(Tool.schedule == schedule_filter)
-    if location_filter:
-        query = query.filter(Tool.location == location_filter)
-    if owner_filter:
-        query = query.filter(Tool.owner == owner_filter)
-    if router_filter:
-        query = query.filter(Tool.router == router_filter)
+    if department_filter:
+        query = query.filter(Tool.department == department_filter)
+    if retained_by_filter:
+        query = query.filter(Tool.retained_by == retained_by_filter)
 
     col = getattr(Tool, sort, Tool.next_calibration_date)
     query = query.order_by(col.asc() if order == "asc" else col.desc())
@@ -145,17 +142,16 @@ def dashboard():
         Tool.status == "due_soon", Tool.on_backup_list == False
     ).order_by(Tool.next_calibration_date.asc()).all()
 
-    locations = [r[0] for r in db.session.query(Tool.location).distinct() if r[0]]
-    owners = [r[0] for r in db.session.query(Tool.owner).distinct() if r[0]]
-    routers = [r[0] for r in db.session.query(Tool.router).distinct() if r[0]]
+    departments = [r[0] for r in db.session.query(Tool.department).distinct() if r[0]]
+    retained_bys = [r[0] for r in db.session.query(Tool.retained_by).distinct() if r[0]]
 
     return render_template(
         "dashboard.html", tools=tools,
-        locations=locations, owners=owners, routers=routers,
+        departments=departments, retained_bys=retained_bys,
         overdue_tools=overdue_tools, due_soon_tools=due_soon_tools,
         q=q, status_filter=status_filter, schedule_filter=schedule_filter,
-        location_filter=location_filter, owner_filter=owner_filter,
-        router_filter=router_filter, sort=sort, order=order,
+        department_filter=department_filter, retained_by_filter=retained_by_filter,
+        sort=sort, order=order,
     )
 
 
@@ -175,9 +171,10 @@ def tool_new():
             serial_number=serial,
             tool_id_number=tool_id_num,
             log_number=request.form.get("log_number", "").strip(),
+            department=request.form.get("department", "").strip(),
             location=request.form.get("location", "").strip(),
-            owner=request.form.get("owner", "").strip(),
-            router=request.form.get("router", "").strip(),
+            retained_by=request.form.get("retained_by", "").strip(),
+            calibration_performed_by=request.form.get("calibration_performed_by", "").strip(),
             schedule=request.form.get("schedule", "annual"),
             custom_interval_days=int(request.form["custom_interval_days"]) if request.form.get("custom_interval_days") else None,
             status=request.form.get("status", "active"),
@@ -215,9 +212,10 @@ def tool_edit(tool_id):
         tool.serial_number = request.form.get("serial_number", "").strip()
         tool.tool_id_number = request.form.get("tool_id_number", "").strip()
         tool.log_number = request.form.get("log_number", "").strip()
+        tool.department = request.form.get("department", "").strip()
         tool.location = request.form.get("location", "").strip()
-        tool.owner = request.form.get("owner", "").strip()
-        tool.router = request.form.get("router", "").strip()
+        tool.retained_by = request.form.get("retained_by", "").strip()
+        tool.calibration_performed_by = request.form.get("calibration_performed_by", "").strip()
         tool.schedule = request.form.get("schedule", "annual")
         cid = request.form.get("custom_interval_days")
         tool.custom_interval_days = int(cid) if cid else None
@@ -308,11 +306,11 @@ def calibrate(tool_id):
         record = CalibrationRecord(
             tool_id=tool.id,
             calibration_date=cal_date,
-            performed_by=request.form.get("performed_by", "").strip(),
             calibration_company=request.form.get("calibration_company", "").strip(),
             certificate_number=request.form.get("certificate_number", "").strip(),
             result=result,
             notes=request.form.get("notes", "").strip(),
+            test_report_link=request.form.get("test_report_link", "").strip(),
             requires_replacement=result == "fail",
             replacement_notes=request.form.get("replacement_notes", "").strip() if result == "fail" else "",
         )
@@ -1076,28 +1074,13 @@ def bulk_upload():
                     record = CalibrationRecord(
                         tool_id=tool.id,
                         calibration_date=cal_date,
-                        due_date=cert_data.get("cal_due_date"),
-                        performed_by=cert_data.get("service_technician", ""),
                         calibration_company=cert_data.get("manufacturer", "Cal Tec Labs") if is_mettler else "Cal Tec Labs",
                         certificate_number=cert_data.get("cert_number", ""),
                         result=result_code,
-                        as_found=cert_data.get("as_found", ""),
-                        as_left=cert_data.get("as_left", ""),
-                        source_company="Cal Tec Labs",
-                        temperature=cert_data.get("temperature", ""),
-                        cal_interval=cert_data.get("cal_interval", ""),
-                        cert_tool_id=cert_data.get("tool_id", ""),
-                        cert_serial=cert_data.get("serial_number", ""),
-                        cert_model=cert_data.get("model_number", ""),
-                        cert_description=cert_data.get("description", ""),
-                        test_points=json.dumps(cert_data.get("test_points", [])),
-                        standards_used=json.dumps(cert_data.get("standards_used", [])),
                         notes=f"Auto-imported from bulk PDF. Matched via {match_method}.",
                     )
                     if is_mettler:
-                        record.report_number = cert_data.get("cert_number", "")
                         record.calibration_company = "Mettler Toledo"
-                        record.source_company = "Mettler Toledo"
 
                     db.session.add(record)
                     db.session.flush()
@@ -1224,22 +1207,9 @@ def bulk_upload_link():
     record = CalibrationRecord(
         tool_id=tool.id,
         calibration_date=cal_date,
-        due_date=cert_data.get("cal_due_date"),
-        performed_by=cert_data.get("service_technician", ""),
         calibration_company="Cal Tec Labs",
         certificate_number=cert_data.get("cert_number", ""),
         result=result_code,
-        as_found=cert_data.get("as_found", ""),
-        as_left=cert_data.get("as_left", ""),
-        source_company="Cal Tec Labs",
-        temperature=cert_data.get("temperature", ""),
-        cal_interval=cert_data.get("cal_interval", ""),
-        cert_tool_id=cert_data.get("tool_id", ""),
-        cert_serial=cert_data.get("serial_number", ""),
-        cert_model=cert_data.get("model_number", ""),
-        cert_description=cert_data.get("description", ""),
-        test_points=json.dumps(cert_data.get("test_points", [])),
-        standards_used=json.dumps(cert_data.get("standards_used", [])),
         notes="Manually linked from bulk upload.",
     )
     db.session.add(record)
@@ -1487,8 +1457,8 @@ def csv_import():
                             if cert not in (existing.sticker_id or ""):
                                 existing.sticker_id = cert
                                 changed = True
-                        if person and not existing.owner:
-                            existing.owner = person
+                        if person and not existing.retained_by:
+                            existing.retained_by = person
                             changed = True
                         if changed:
                             updated += 1
@@ -1537,8 +1507,8 @@ def csv_import():
                         manufacturer=manufacturer,
                         serial_number=serial,
                         log_number=log_number,
-                        location=dept,
-                        owner=person,
+                        department=dept,
+                        retained_by=person,
                         schedule=schedule,
                         custom_interval_days=custom_days,
                         status=tool_status,

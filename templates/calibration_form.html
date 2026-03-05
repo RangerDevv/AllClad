@@ -24,15 +24,11 @@
 
   <div class="form-row">
     <div class="form-group">
-      <label for="performed_by">Performed By</label>
-      <input type="text" name="performed_by" id="performed_by" class="form-control" placeholder="Person or technician name">
-    </div>
-    <div class="form-group">
       <label for="calibration_company">Calibration Company</label>
       <input type="text" name="calibration_company" id="calibration_company" class="form-control" placeholder="External lab / company">
     </div>
     <div class="form-group">
-      <label for="certificate_number">Certificate Number</label>
+      <label for="certificate_number">Certificate Number / Report ID Number</label>
       <input type="text" name="certificate_number" id="certificate_number" class="form-control" placeholder="Cert. or report #">
     </div>
   </div>
@@ -53,6 +49,11 @@
   <div class="form-group">
     <label for="notes">Notes</label>
     <textarea name="notes" id="notes" class="form-control" placeholder="Calibration details, observations…"></textarea>
+  </div>
+
+  <div class="form-group">
+    <label for="test_report_link">Link to Test Report</label>
+    <input type="url" name="test_report_link" id="test_report_link" class="form-control" placeholder="https://… (URL to external test report)">
   </div>
 
   <div class="form-row">

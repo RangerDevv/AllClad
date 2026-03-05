@@ -30,7 +30,7 @@
           <td><strong>{{ t.log_number }}</strong></td>
           <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
           <td class="text-sm">{{ t.serial_number }}</td>
-          <td class="text-sm">{{ t.location }}</td>
+          <td class="text-sm">{{ t.department }}</td>
           <td><span class="badge badge-{{ t.status }}">{{ t.status | replace('_',' ') }}</span></td>
           <td class="text-sm">{{ t.last_calibration_date or '—' }}</td>
           <td>

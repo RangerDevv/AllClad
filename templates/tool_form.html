@@ -26,6 +26,11 @@
       <small class="text-muted">Optional — some tools don't have serial numbers</small>
     </div>
     <div class="form-group">
+      <label for="sticker_id">Sticker ID</label>
+      <input type="text" name="sticker_id" id="sticker_id" class="form-control"
+             value="{{ tool.sticker_id if tool else '' }}" placeholder="Barcode / label ID">
+    </div>
+    <div class="form-group">
       <label for="tool_id_number">I.D. Number (Cal Tec Labs)</label>
       <input type="text" name="tool_id_number" id="tool_id_number" class="form-control"
              value="{{ tool.tool_id_number if tool else '' }}" placeholder="e.g. 2489">
@@ -35,11 +40,6 @@
       <label for="log_number">Log Number *</label>
       <input type="text" name="log_number" id="log_number" class="form-control" required
              value="{{ tool.log_number if tool else '' }}">
-    </div>
-    <div class="form-group">
-      <label for="sticker_id">Sticker ID</label>
-      <input type="text" name="sticker_id" id="sticker_id" class="form-control"
-             value="{{ tool.sticker_id if tool else '' }}" placeholder="Barcode / label ID">
     </div>
   </div>
 
@@ -58,25 +58,25 @@
 
   <div class="form-row">
     <div class="form-group">
+      <label for="department">Department</label>
+      <input type="text" name="department" id="department" class="form-control"
+             value="{{ tool.department if tool else '' }}" placeholder="e.g. Blanking Cell, QC Lab">
+    </div>
+    <div class="form-group">
       <label for="location">Location</label>
       <input type="text" name="location" id="location" class="form-control"
-             value="{{ tool.location if tool else '' }}" placeholder="Building, room, station…">
+             value="{{ tool.location if tool else '' }}" placeholder="Precise location within the department">
     </div>
     <div class="form-group">
-      <label for="owner">Owner</label>
-      <input type="text" name="owner" id="owner" class="form-control"
-             value="{{ tool.owner if tool else '' }}">
-    </div>
-    <div class="form-group">
-      <label for="router">Router</label>
-      <input type="text" name="router" id="router" class="form-control"
-             value="{{ tool.router if tool else '' }}" placeholder="Specific router assignment">
+      <label for="retained_by">Retained By <small class="text-muted">(if applicable)</small></label>
+      <input type="text" name="retained_by" id="retained_by" class="form-control"
+             value="{{ tool.retained_by if tool else '' }}" placeholder="Person or group retaining the tool">
     </div>
   </div>
 
   <div class="form-row">
     <div class="form-group">
-      <label for="schedule">Calibration Schedule *</label>
+      <label for="schedule">Calibration Schedule Frequency *</label>
       <select name="schedule" id="schedule" class="form-control" onchange="toggleCustom(this)">
         {% for val, label in schedule_choices %}
         <option value="{{ val }}" {{ 'selected' if tool and tool.schedule == val }}>{{ label }}</option>
@@ -89,6 +89,14 @@
              min="1" value="{{ tool.custom_interval_days if tool and tool.custom_interval_days else '' }}">
     </div>
     <div class="form-group">
+      <label for="calibration_performed_by">Calibration Performed By</label>
+      <input type="text" name="calibration_performed_by" id="calibration_performed_by" class="form-control"
+             value="{{ tool.calibration_performed_by if tool else '' }}" placeholder="Company that performs calibration">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
       <label for="status">Status</label>
       <select name="status" id="status" class="form-control">
         {% for val, label in status_choices %}
@@ -96,21 +104,21 @@
         {% endfor %}
       </select>
     </div>
-  </div>
-
-  <div class="form-row">
     <div class="form-group">
       <label for="last_calibration_date">Last Calibration Date</label>
       <input type="date" name="last_calibration_date" id="last_calibration_date" class="form-control"
              value="{{ tool.last_calibration_date if tool and tool.last_calibration_date else '' }}">
     </div>
+  </div>
+
+  <div class="form-row">
     <div class="form-group">
-      <label for="service_in_date">Service In Date</label>
+      <label for="service_in_date">Service-In Date</label>
       <input type="date" name="service_in_date" id="service_in_date" class="form-control"
              value="{{ tool.service_in_date if tool and tool.service_in_date else '' }}">
     </div>
     <div class="form-group">
-      <label for="service_out_date">Service Out Date</label>
+      <label for="service_out_date">Service-Out Date</label>
       <input type="date" name="service_out_date" id="service_out_date" class="form-control"
              value="{{ tool.service_out_date if tool and tool.service_out_date else '' }}">
     </div>
