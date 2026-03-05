@@ -133,7 +133,11 @@ def dashboard():
 
     col = getattr(Tool, sort, Tool.next_calibration_date)
     query = query.order_by(col.asc() if order == "asc" else col.desc())
-    tools = query.all()
+
+    page = request.args.get("page", 1, type=int)
+    per_page = 25
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    tools = pagination.items
 
     overdue_tools = Tool.query.filter(
         Tool.status == "overdue", Tool.on_backup_list == False
@@ -146,7 +150,7 @@ def dashboard():
     retained_bys = [r[0] for r in db.session.query(Tool.retained_by).distinct() if r[0]]
 
     return render_template(
-        "dashboard.html", tools=tools,
+        "dashboard.html", tools=tools, pagination=pagination,
         departments=departments, retained_bys=retained_bys,
         overdue_tools=overdue_tools, due_soon_tools=due_soon_tools,
         q=q, status_filter=status_filter, schedule_filter=schedule_filter,
@@ -290,8 +294,11 @@ def tool_restore(tool_id):
 
 @app.route("/backup")
 def backup_list():
-    tools = Tool.query.filter(Tool.on_backup_list == True).all()
-    return render_template("backup_list.html", tools=tools)
+    page = request.args.get("page", 1, type=int)
+    per_page = 25
+    pagination = Tool.query.filter(Tool.on_backup_list == True).paginate(page=page, per_page=per_page, error_out=False)
+    tools = pagination.items
+    return render_template("backup_list.html", tools=tools, pagination=pagination)
 
 
 # ── Log Calibration ────────────────────────────────────────────────────────
@@ -1262,12 +1269,15 @@ def certificates():
 @app.route("/calibrations")
 def calibration_list():
     """Browse all calibration records across all tools."""
-    records = (
+    page = request.args.get("page", 1, type=int)
+    per_page = 25
+    pagination = (
         CalibrationRecord.query
         .order_by(CalibrationRecord.calibration_date.desc())
-        .all()
+        .paginate(page=page, per_page=per_page, error_out=False)
     )
-    return render_template("calibration_list.html", records=records)
+    records = pagination.items
+    return render_template("calibration_list.html", records=records, pagination=pagination)
 
 
 # ── CSV Import ──────────────────────────────────────────────────────────────
