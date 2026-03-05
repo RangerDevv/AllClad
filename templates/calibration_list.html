@@ -3,7 +3,7 @@
 {% block title %}Calibration Records{% endblock %}
 {% block page_title %}
   <i class="fas fa-clipboard-check"></i> Calibration Records
-  <span class="text-muted text-sm" style="margin-left:.75rem;">{{ records|length }} record{{ 's' if records|length != 1 }}</span>
+  <span class="text-muted text-sm" style="margin-left:.75rem;">{{ pagination.total }} record{{ 's' if pagination.total != 1 }}</span>
 {% endblock %}
 
 {% block topbar_actions %}
@@ -85,6 +85,29 @@
     </table>
   </div>
 </div>
+
+{% if pagination.pages > 1 %}
+<nav class="pagination-nav" style="display:flex;justify-content:center;align-items:center;gap:.5rem;margin-top:1.25rem;flex-wrap:wrap;">
+  {% if pagination.has_prev %}
+  <a href="{{ url_for('calibration_list', page=pagination.prev_num) }}" class="btn btn-secondary btn-sm"><i class="fas fa-chevron-left"></i> Prev</a>
+  {% endif %}
+  {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+    {% if p %}
+      {% if p == pagination.page %}
+        <span class="btn btn-primary btn-sm" style="pointer-events:none;">{{ p }}</span>
+      {% else %}
+        <a href="{{ url_for('calibration_list', page=p) }}" class="btn btn-outline btn-sm">{{ p }}</a>
+      {% endif %}
+    {% else %}
+      <span style="color:var(--c-text-lt);">…</span>
+    {% endif %}
+  {% endfor %}
+  {% if pagination.has_next %}
+  <a href="{{ url_for('calibration_list', page=pagination.next_num) }}" class="btn btn-secondary btn-sm">Next <i class="fas fa-chevron-right"></i></a>
+  {% endif %}
+</nav>
+{% endif %}
+
 {% else %}
 <div class="empty-state">
   <i class="fas fa-clipboard-check empty-icon"></i>

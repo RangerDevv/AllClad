@@ -74,5 +74,18 @@
 function toggleFailFields(sel) {
   document.getElementById('failFields').style.display = sel.value === 'fail' ? '' : 'none';
 }
+
+document.querySelector('form').addEventListener('submit', function(e) {
+  var result = document.getElementById('result').value;
+  var msg = 'Save this calibration record?';
+  if (result === 'fail') {
+    msg = '⚠️ You are recording a FAIL result.\n\nThis will mark the tool as Out of Calibration.\n\nAre you sure you want to continue?';
+  } else if (result === 'limited') {
+    msg = 'You are recording a Limited/Conditional result.\n\nAre you sure you want to continue?';
+  }
+  if (!confirm(msg)) {
+    e.preventDefault();
+  }
+});
 </script>
 {% endblock %}
