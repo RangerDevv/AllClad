@@ -337,7 +337,7 @@ def seed():
                         tool_id=tool.id,
                         calibration_date=tool.last_calibration_date,
                         calibration_company="Mettler Toledo / Cal Tec",
-                        certificate_number=f"CERT-{tool.log_number}",
+                        certificate_number=f"CERT-{tool.id}",
                         result="pass",
                         notes="Calibrated per manufacturer specs.",
                     )

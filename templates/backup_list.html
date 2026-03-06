@@ -15,10 +15,9 @@
     <table>
       <thead>
         <tr>
-          <th>Log #</th>
           <th>Tool Name</th>
           <th>Serial #</th>
-          <th>Location</th>
+          <th>Department</th>
           <th>Reason</th>
           <th>Last Cal.</th>
           <th>Actions</th>
@@ -27,7 +26,6 @@
       <tbody>
         {% for t in tools %}
         <tr>
-          <td><strong>{{ t.log_number }}</strong></td>
           <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
           <td class="text-sm">{{ t.serial_number }}</td>
           <td class="text-sm">{{ t.department }}</td>

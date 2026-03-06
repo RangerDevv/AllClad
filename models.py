@@ -146,7 +146,7 @@ class Tool(db.Model):
             return self.serial_number
         if self.tool_id_number:
             return f"ID:{self.tool_id_number}"
-        return self.log_number
+        return self.name
 
     def to_dict(self):
         return {
@@ -154,7 +154,6 @@ class Tool(db.Model):
             "name": self.name,
             "serial_number": self.serial_number,
             "tool_id_number": self.tool_id_number,
-            "log_number": self.log_number,
             "department": self.department,
             "location": self.location,
             "retained_by": self.retained_by,
@@ -168,7 +167,7 @@ class Tool(db.Model):
         }
 
     def __repr__(self):
-        return f"<Tool {self.log_number} – {self.name}>"
+        return f"<Tool #{self.id} – {self.name}>"
 
 
 # ── Calibration Record (unified – includes test report data) ────────────────

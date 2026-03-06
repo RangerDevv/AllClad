@@ -114,7 +114,6 @@ def dashboard():
                 Tool.name.ilike(like),
                 Tool.serial_number.ilike(like),
                 Tool.tool_id_number.ilike(like),
-                Tool.log_number.ilike(like),
                 Tool.sticker_id.ilike(like),
                 Tool.retained_by.ilike(like),
                 Tool.department.ilike(like),
@@ -174,7 +173,7 @@ def tool_new():
             model_number=request.form.get("model_number", "").strip(),
             serial_number=serial,
             tool_id_number=tool_id_num,
-            log_number=request.form.get("log_number", "").strip(),
+            log_number=f"T-{uuid.uuid4().hex[:8].upper()}",
             department=request.form.get("department", "").strip(),
             location=request.form.get("location", "").strip(),
             retained_by=request.form.get("retained_by", "").strip(),
@@ -215,7 +214,6 @@ def tool_edit(tool_id):
         tool.model_number = request.form.get("model_number", "").strip()
         tool.serial_number = request.form.get("serial_number", "").strip()
         tool.tool_id_number = request.form.get("tool_id_number", "").strip()
-        tool.log_number = request.form.get("log_number", "").strip()
         tool.department = request.form.get("department", "").strip()
         tool.location = request.form.get("location", "").strip()
         tool.retained_by = request.form.get("retained_by", "").strip()
@@ -421,7 +419,6 @@ def api_lookup():
             db.or_(
                 Tool.serial_number.ilike(like),
                 Tool.tool_id_number.ilike(like),
-                Tool.log_number.ilike(like),
                 Tool.sticker_id.ilike(like),
                 Tool.name.ilike(like),
             )
@@ -1154,7 +1151,7 @@ def bulk_upload():
         )
 
         return render_template("bulk_upload.html", results=all_results, processed=True,
-                               all_tools=Tool.query.order_by(Tool.log_number).all())
+                               all_tools=Tool.query.order_by(Tool.name).all())
 
     return render_template("bulk_upload.html", results=[], processed=False)
 
@@ -1200,7 +1197,7 @@ def bulk_upload_link():
         )
         db.session.add(tool)
         db.session.flush()
-        flash(f"Created new tool '{tool.name}' (Log: {tool.log_number}).", "success")
+        flash(f"Created new tool '{tool.name}'.", "success")
     elif tool_id:
         tool = Tool.query.get_or_404(int(tool_id))
     else:

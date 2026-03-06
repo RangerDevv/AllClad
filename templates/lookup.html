@@ -6,13 +6,13 @@
 {% block content %}
 <div class="card">
   <p class="text-muted mb-2">
-    Enter one or more serial numbers, log numbers, or sticker IDs — separated by commas or newlines.
+    Enter one or more serial numbers, I.D. numbers, or sticker IDs — separated by commas or newlines.
     Scan barcodes directly into the field on iPad.
   </p>
 
   <div class="lookup-input-area">
     <textarea id="lookupInput" class="form-control" rows="3"
-              placeholder="Enter serial #, log #, or sticker ID…&#10;Scan barcode here…&#10;Separate multiple with commas or newlines"></textarea>
+              placeholder="Enter serial #, I.D. #, or sticker ID…&#10;Scan barcode here…&#10;Separate multiple with commas or newlines"></textarea>
     <div style="display:flex;flex-direction:column;gap:.5rem;">
       <button class="btn btn-primary" onclick="doLookup()"><i class="fas fa-search"></i> Search</button>
       <button class="btn btn-secondary" onclick="clearLookup()"><i class="fas fa-times"></i> Clear</button>
@@ -44,10 +44,9 @@ async function doLookup() {
       html += '<span class="text-danger">No matches</span></h3>';
     } else {
       html += group.matches.length + ' match(es)</h3>';
-      html += '<div class="table-wrap"><table><thead><tr><th>Log #</th><th>Name</th><th>S/N</th><th>Status</th><th>Next Cal.</th><th></th></tr></thead><tbody>';
+      html += '<div class="table-wrap"><table><thead><tr><th>Name</th><th>S/N</th><th>Status</th><th>Next Cal.</th><th></th></tr></thead><tbody>';
       group.matches.forEach(t => {
         html += '<tr>';
-        html += '<td><strong>' + t.log_number + '</strong></td>';
         html += '<td><a href="/tools/' + t.id + '">' + t.name + '</a></td>';
         html += '<td>' + t.serial_number + '</td>';
         html += '<td><span class="badge badge-' + t.status + '">' + t.status.replace(/_/g,' ') + '</span></td>';

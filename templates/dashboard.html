@@ -37,7 +37,6 @@
       <table>
         <thead>
           <tr>
-            <th>Log #</th>
             <th>Tool Name</th>
             <th>Serial #</th>
             <th>Department</th>
@@ -50,7 +49,6 @@
         <tbody>
           {% for t in overdue_tools %}
           <tr>
-            <td><strong>{{ t.log_number }}</strong></td>
             <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
             <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
             <td class="text-sm">{{ t.department }}</td>
@@ -85,7 +83,6 @@
       <table>
         <thead>
           <tr>
-            <th>Log #</th>
             <th>Tool Name</th>
             <th>Serial #</th>
             <th>Department</th>
@@ -98,7 +95,6 @@
         <tbody>
           {% for t in due_soon_tools %}
           <tr>
-            <td><strong>{{ t.log_number }}</strong></td>
             <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
             <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
             <td class="text-sm">{{ t.department }}</td>
@@ -148,7 +144,7 @@
 <form method="get" class="filters-bar" id="filtersForm">
   <div class="form-group">
     <label>Search</label>
-    <input type="text" name="q" class="form-control" placeholder="Name, S/N, log #…" value="{{ q }}">
+    <input type="text" name="q" class="form-control" placeholder="Name, S/N, I.D. #…" value="{{ q }}">
   </div>
   <div class="form-group">
     <label>Status</label>
@@ -219,7 +215,6 @@
             </a>
           </th>
           {% endmacro %}
-          {{ sort_header('log_number', 'Log #') }}
           {{ sort_header('name', 'Tool Name') }}
           {{ sort_header('serial_number', 'Serial #') }}
           {{ sort_header('department', 'Department') }}
@@ -234,7 +229,6 @@
       <tbody>
         {% for t in tools %}
         <tr>
-          <td><strong>{{ t.log_number }}</strong></td>
           <td><a href="{{ url_for('tool_detail', tool_id=t.id) }}">{{ t.name }}</a></td>
           <td class="text-sm">{{ t.serial_number or t.tool_id_number or '—' }}</td>
           <td class="text-sm">{{ t.department or '—' }}</td>
