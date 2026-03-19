@@ -889,25 +889,31 @@ def determine_schedule_from_interval(interval_str):
     return "semiannual"  # Default for Cal Tec Labs (6 months is common)
 
 
+def normalize_id(s):
+    """Normalize an ID by removing spaces and dashes for flexible matching."""
+    if not s:
+        return ""
+    return re.sub(r"[\s\-]+", "", s).lower()
+
+
 def match_cert_to_tool(cert_data):
     """Try to match parsed certificate data to an existing tool.
-    
+
     Matching priority (Equipment I.D. first — it's the primary identifier):
-    1. Equipment I.D. (exact match against tool_id_number)
-    2. Equipment I.D. (exact match against sticker_id)
-    3. Equipment I.D. (exact match against log_number)
-    4. Serial number (exact match) — serial is a separate field
-    5. Equipment I.D. (partial/contains match)
-    6. Serial number (partial/contains match)
-    
+    1. Equipment I.D. exact match (tool_id_number, sticker_id, log_number)
+    2. Equipment I.D. normalized match (ignoring spaces/dashes)
+    3. Equipment I.D. found in serial_number field (for legacy data)
+    4. Serial number exact match
+    5. Equipment I.D. partial match (contains)
+    6. Serial number partial match (contains)
+    7. Leading zero variants (0057313 vs 57313)
+
     Returns (tool, match_method) or (None, None).
     """
     cert_serial = (cert_data.get("serial_number") or "").strip()
     cert_tool_id = (cert_data.get("tool_id") or "").strip()
-    cert_model = (cert_data.get("model_number") or "").strip()
-    cert_manufacturer = (cert_data.get("manufacturer") or "").strip()
-    cert_description = (cert_data.get("description") or "").strip()
-    
+    cert_tool_id_normalized = normalize_id(cert_tool_id)
+
     # 1. Exact Equipment I.D. → tool_id_number
     if cert_tool_id:
         tool = Tool.query.filter(
@@ -915,7 +921,7 @@ def match_cert_to_tool(cert_data):
         ).first()
         if tool:
             return tool, f"equipment_id={cert_tool_id}"
-    
+
     # 2. Equipment I.D. → sticker_id
     if cert_tool_id:
         tool = Tool.query.filter(
@@ -923,7 +929,7 @@ def match_cert_to_tool(cert_data):
         ).first()
         if tool:
             return tool, f"sticker_id={cert_tool_id}"
-    
+
     # 3. Equipment I.D. → log_number
     if cert_tool_id:
         tool = Tool.query.filter(
@@ -931,31 +937,70 @@ def match_cert_to_tool(cert_data):
         ).first()
         if tool:
             return tool, f"log_number={cert_tool_id}"
-    
-    # 4. Exact serial number match (serial is a separate identifier)
+
+    # 4. Normalized match - handles "A-TG -1" vs "A-TG1", "CTC3" vs "C-TC3"
+    if cert_tool_id_normalized and len(cert_tool_id_normalized) >= 2:
+        tools = Tool.query.filter(Tool.tool_id_number != "").all()
+        for tool in tools:
+            if normalize_id(tool.tool_id_number) == cert_tool_id_normalized:
+                return tool, f"equipment_id_normalized={cert_tool_id}"
+
+    # 5. Equipment I.D. found in serial_number field (legacy data pattern)
+    # Handles: "C07441 (Model SR160)", "CR14 (Model SR160)", "A-TG -1"
+    if cert_tool_id and len(cert_tool_id) >= 2:
+        tools = Tool.query.filter(Tool.serial_number != "").all()
+        for tool in tools:
+            sn = tool.serial_number or ""
+            cert_id_lower = cert_tool_id.lower()
+            # Get the ID portion before any parentheses or slashes
+            sn_id_part = re.split(r"[\(/]", sn)[0].strip() if sn else ""
+            sn_first_token = re.split(r"[\s\(/]", sn)[0].lower() if sn else ""
+            # Check if serial first token matches exactly
+            if sn_first_token == cert_id_lower:
+                return tool, f"serial_number_prefix={cert_tool_id}"
+            # Check normalized match of the ID portion (handles "A-TG -1" vs "A-TG1")
+            if normalize_id(sn_id_part) == cert_tool_id_normalized:
+                return tool, f"serial_number_normalized={cert_tool_id}"
+
+    # 6. Exact serial number match
     if cert_serial:
         tool = Tool.query.filter(
             db.func.lower(Tool.serial_number) == cert_serial.lower()
         ).first()
         if tool:
             return tool, f"serial_number={cert_serial}"
-    
-    # 5. Partial Equipment I.D. match
+
+    # 7. Leading zero handling - "0057313" vs "57313"
+    if cert_tool_id and cert_tool_id.lstrip("0") != cert_tool_id:
+        stripped_id = cert_tool_id.lstrip("0")
+        if stripped_id:
+            tool = Tool.query.filter(
+                db.func.lower(Tool.tool_id_number) == stripped_id.lower()
+            ).first()
+            if tool:
+                return tool, f"equipment_id_stripped_zeros={cert_tool_id}"
+            tool = Tool.query.filter(
+                db.func.lower(Tool.serial_number) == stripped_id.lower()
+            ).first()
+            if tool:
+                return tool, f"serial_stripped_zeros={cert_tool_id}"
+
+    # 8. Partial Equipment I.D. match
     if cert_tool_id and len(cert_tool_id) >= 3:
         tool = Tool.query.filter(
             Tool.tool_id_number.ilike(f"%{cert_tool_id}%")
         ).first()
         if tool:
             return tool, f"equipment_id_contains={cert_tool_id}"
-    
-    # 6. Partial serial match
+
+    # 9. Partial serial match
     if cert_serial and len(cert_serial) >= 4:
         tool = Tool.query.filter(
             Tool.serial_number.ilike(f"%{cert_serial}%")
         ).first()
         if tool:
             return tool, f"serial_contains={cert_serial}"
-    
+
     return None, None
 
 
